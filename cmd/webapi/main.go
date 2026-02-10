@@ -15,7 +15,6 @@ import (
 	"wasatext/service/api"
 	"wasatext/service/database"
 
-	"github.com/gorilla/mux"
 	"golang.org/x/time/rate"
 )
 
@@ -41,7 +40,11 @@ func run() error {
 	}
 
 	// Step 2: Initialize the database
-	db, err := database.New("wasatext.db")
+	dbPath := os.Getenv("WASATEXT_DB_FILENAME")
+	if dbPath == "" {
+		dbPath = "wasatext.db"
+	}
+	db, err := database.New(dbPath)
 	if err != nil {
 		return fmt.Errorf("error initializing database: %w", err)
 	}
@@ -55,16 +58,19 @@ func run() error {
 
 	// Register WebUI
 	// This serves the frontend files (if embedded)
-	if err := registerWebUI(router.(*mux.Router)); err != nil {
+	if err := registerWebUI(router); err != nil {
 		// Log warning but don't fail, as webui might be optional during dev
 		log.Printf("Warning: failed to register WebUI: %v", err)
 	}
 
 	// Step 5: Start the server
 	log.Printf("WASAText server starting on port %s...", port)
-	log.Printf("API available at http://localhost:%s/api", port)
+	log.Printf("API available at http://localhost:%s/", port)
 
-	err = http.ListenAndServe(":"+port, router)
+	// Wrap the router with CORS middleware
+	handler := api.CorsMiddleware(router)
+
+	err = http.ListenAndServe(":"+port, handler)
 	if err != nil {
 		return fmt.Errorf("server failed to start: %w", err)
 	}

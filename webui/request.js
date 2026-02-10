@@ -3,9 +3,9 @@ API Helper Functions
 Uses axios for HTTP requests.
 */
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = "";
 
-const api = {
+window.api = {
     // LOGIN
     async login(username) {
         try {

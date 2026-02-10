@@ -8,7 +8,10 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
+      - WASATEXT_DB_FILENAME=/app/data/wasatext.db
     volumes:
       # Persist the database file
-      - ./wasatext.db:/app/wasatext.db
+      # Mounting to /app/data/wasatext.db avoids the "is a directory" issue
+      # as /app/data is created as a directory in the Dockerfile
+      - ./wasatext.db:/app/data/wasatext.db
     restart: unless-stopped

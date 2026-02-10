@@ -16,8 +16,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/gorilla/mux"
 	"wasatext/service/database"
+
+	"github.com/gorilla/mux"
 )
 
 // Handler contains all API handler methods
@@ -30,8 +31,8 @@ func New(db database.AppDatabase) *Handler {
 	return &Handler{db: db}
 }
 
-// NewRouter creates a new router with all routes and CORS middleware
-func NewRouter(h *Handler) http.Handler {
+// NewRouter creates a new router with all routes
+func NewRouter(h *Handler) *mux.Router {
 	// Gorilla Mux is a popular Go router
 	// It matches URLs to handler functions
 	r := mux.NewRouter()
@@ -77,31 +78,13 @@ func NewRouter(h *Handler) http.Handler {
 	r.HandleFunc("/groups/{groupId}/name", h.SetGroupName).Methods("PUT", "OPTIONS")
 	r.HandleFunc("/groups/{groupId}/photo", h.SetGroupPhoto).Methods("PUT", "OPTIONS")
 
-	// Serve static files (Frontend)
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./webui")))
-
-	// Wrap with CORS middleware
-	return corsMiddleware(r)
+	return r
 }
 
 /*
-CORS Middleware
-
-What is CORS?
-CORS = Cross-Origin Resource Sharing
-
-When your frontend (running on localhost:5000) makes a request to
-your backend (running on localhost:3000), the browser blocks it
-by default for security reasons. This is called "cross-origin".
-
-CORS headers tell the browser: "It's OK to accept requests from
-other websites/origins."
-
-From the PDF:
-- Allow ALL origins
-- Set Max-Age to 1 second
+CorsMiddleware handles the CORS headers
 */
-func corsMiddleware(next http.Handler) http.Handler {
+func CorsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Set CORS headers (as specified in PDF)
 		w.Header().Set("Access-Control-Allow-Origin", "*")                                // Allow ALL origins

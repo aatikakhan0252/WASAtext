@@ -1,24 +1,17 @@
 package main
 
 import (
-	"io/fs"
 	"net/http"
 	"wasatext/webui"
 
 	"github.com/gorilla/mux"
 )
 
-// webuiContent is the embedded frontend content
-
-// registerWebUI registers the WebUI path to the router
-// This function allows serving the frontend files
+// registerWebUI registers the WebUI to serve the frontend files.
+// The frontend files are embedded in the Go binary via the webui package.
 func registerWebUI(router *mux.Router) error {
-	dist, err := fs.Sub(webui.Content, "dist")
-	if err != nil {
-		return err
-	}
-
-	// Serve static files
-	router.Handle("/", http.FileServer(http.FS(dist)))
+	// Serve static files directly from the embedded webui filesystem.
+	// No "dist" subdirectory needed since this is a plain HTML/JS/CSS app.
+	router.PathPrefix("/").Handler(http.FileServer(http.FS(webui.Content)))
 	return nil
 }
