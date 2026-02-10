@@ -1,0 +1,10 @@
+{
+  "api": {
+    "port": 3000,
+    "host": "localhost"
+  },
+  "database": {
+    "file": "wasatext.db"
+  },
+  "debug": true
+}
