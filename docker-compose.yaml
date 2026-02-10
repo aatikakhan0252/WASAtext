@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  webapi:
+    build: .
+    image: wasa-app:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    volumes:
+      # Persist the database file
+      - ./wasatext.db:/app/wasatext.db
+    restart: unless-stopped
