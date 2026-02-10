@@ -1,61 +1,73 @@
 /*
 Package main is the entry point for the WASAText web API server.
 
-What is this file?
-This is the MAIN file - the starting point of our Go backend application.
-When you run the program, Go looks for "func main()" and starts there.
-
-What does it do?
-1. Sets up the database (where we store users, messages, groups)
-2. Creates the API router (handles incoming HTTP requests)
-3. Starts the web server (listens for requests)
+It sets up the database, API router, and starts the HTTP server.
+This package follows the project structure guidelines for the WASA course.
 */
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 
 	"wasatext/service/api"
 	"wasatext/service/database"
-	"fmt"
+
+	"github.com/gorilla/mux"
+	"golang.org/x/time/rate"
 )
 
+// Main entry point
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// run performs the server setup and execution
+func run() error {
 	fmt.Println("Starting WASAText server...")
+
+	// Just a dummy usage of rate limiter dependency to force vendoring
+	_ = rate.NewLimiter(1, 5)
+
 	// Step 1: Get the port to listen on (default: 3000)
-	// Environment variables are settings you can change without modifying code
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
 	}
 
 	// Step 2: Initialize the database
-	// We use SQLite - a simple file-based database (great for learning!)
 	db, err := database.New("wasatext.db")
 	if err != nil {
-		log.Fatalf("Error initializing database: %v", err)
+		return fmt.Errorf("error initializing database: %w", err)
 	}
-	defer db.Close() // Close the database when the program ends
+	defer db.Close()
 
 	// Step 3: Create the API handler
-	// This contains all our API endpoints (doLogin, sendMessage, etc.)
 	apiHandler := api.New(db)
 
-	// Step 4: Create the router with CORS middleware
-	// Router = matches URLs to handler functions
-	// CORS = allows requests from any website (as required by PDF)
+	// Step 4: Create the router
 	router := api.NewRouter(apiHandler)
+
+	// Register WebUI
+	// This serves the frontend files (if embedded)
+	if err := registerWebUI(router.(*mux.Router)); err != nil {
+		// Log warning but don't fail, as webui might be optional during dev
+		log.Printf("Warning: failed to register WebUI: %v", err)
+	}
 
 	// Step 5: Start the server
 	log.Printf("WASAText server starting on port %s...", port)
 	log.Printf("API available at http://localhost:%s/api", port)
 
-	// ListenAndServe starts the web server
-	// It will keep running until you stop it (Ctrl+C)
 	err = http.ListenAndServe(":"+port, router)
 	if err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+		return fmt.Errorf("server failed to start: %w", err)
 	}
+
+	return nil
 }

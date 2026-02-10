@@ -6,6 +6,20 @@ info:
     Built according to the PDF specification - nothing more, nothing less.
   version: "1.0.0"
 
+tags:
+  - name: login
+    description: User authentication and session management
+  - name: user
+    description: User profile and search operations
+  - name: conversation
+    description: Operations related to messaging threads
+  - name: message
+    description: Operations for sending and managing messages
+  - name: comment
+    description: Reactions and comments on messages
+  - name: group
+    description: Group management operations
+
 # Security scheme using Bearer Authentication (user identifier)
 components:
   securitySchemes:
@@ -18,179 +32,270 @@ components:
     # Object for user
     User:
       type: object
+      description: Representation of a user in the system
       properties:
         identifier:
           type: string
-          description: Unique user identifier
+          description: Unique user identifier (hexadecimal string)
           example: "abcdef012345"
+          minLength: 12
+          maxLength: 12
+          pattern: '^[a-f0-9]{12}$'
         name:
           type: string
-          description: Username (3-16 characters)
+          description: Username chosen by the user (3-16 characters)
           minLength: 3
           maxLength: 16
-          pattern: '^.*?$'
+          pattern: '^[a-zA-Z0-9_-]+$'
           example: "Maria"
         photo:
           type: string
           format: binary
-          description: User profile photo (optional)
+          description: User profile photo in binary format (optional)
 
     # Object for group
     Group:
       type: object
+      description: Representation of a group conversation
       properties:
         groupId:
           type: string
           description: Unique group identifier
           example: "group123"
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         name:
           type: string
-          description: Group name
+          description: Name of the group
           example: "Study Group"
+          minLength: 1
+          maxLength: 64
         photo:
           type: string
           format: binary
-          description: Group photo (optional)
+          description: Group photo in binary format (optional)
         members:
           type: array
+          minItems: 1
+          maxItems: 1000
           items:
             $ref: '#/components/schemas/User'
-          description: List of group members
+          description: List of users who are members of the group
 
     # Object for message
     Message:
       type: object
+      description: A single message within a conversation
       properties:
         messageId:
           type: string
           description: Unique message identifier
           example: "msg123"
+          minLength: 1
+          maxLength: 64
         senderId:
           type: string
           description: User identifier of the sender
           example: "abcdef012345"
+          minLength: 12
+          maxLength: 12
+          pattern: '^[a-f0-9]{12}$'
         senderName:
           type: string
           description: Username of the sender
           example: "Maria"
+          minLength: 3
+          maxLength: 16
         content:
           type: string
-          description: Message content (text)
+          description: Text content of the message
           example: "Hello!"
+          minLength: 0
+          maxLength: 10000
         photo:
           type: string
           format: binary
-          description: Photo/GIF content (if message is a photo)
+          description: Photo or GIF data if the message contains media
         timestamp:
           type: string
           format: date-time
-          description: When the message was sent
+          description: ISO 8601 date and time when the message was sent
           example: "2024-01-15T10:30:00Z"
         status:
           type: string
           enum: [sent, received, read]
           description: |
-            Message status:
-            - sent: message sent but not yet received
-            - received: one checkmark (delivered to recipient's conversation list)
-            - read: two checkmarks (recipient opened the conversation)
+            Current delivery and read status:
+            - sent: message successfully reached the server
+            - received: message delivered to the recipient
+            - read: recipient opened the conversation
         replyTo:
           type: string
-          description: Message ID this is a reply to (optional)
+          description: Message ID of the parent message if this is a reply (optional)
           example: "msg100"
+          minLength: 1
+          maxLength: 64
         comments:
           type: array
+          minItems: 0
+          maxItems: 1000
           items:
             $ref: '#/components/schemas/Comment'
-          description: Reactions/comments on this message
+          description: List of reactions/emoticons added to this message
 
     # Comment (reaction) object
     Comment:
       type: object
+      description: A reaction to a message using an emoticon
       properties:
         userId:
           type: string
-          description: User who posted the reaction
+          description: User identifier of the person who reacted
           example: "abcdef012345"
+          minLength: 12
+          maxLength: 12
+          pattern: '^[a-f0-9]{12}$'
         userName:
           type: string
-          description: Username who posted the reaction
+          description: Username of the person who reacted
           example: "Maria"
+          minLength: 3
+          maxLength: 16
         emoticon:
           type: string
-          description: The emoticon used as reaction
+          description: The single emoticon character used as a reaction
           example: "👍"
+          minLength: 1
+          maxLength: 8
 
     # Conversation object (for list view)
     ConversationPreview:
       type: object
+      description: Summary of a conversation for the inbox list view
       properties:
         conversationId:
           type: string
           description: Unique conversation identifier
           example: "conv123"
+          minLength: 1
+          maxLength: 64
         isGroup:
           type: boolean
-          description: True if this is a group conversation
+          description: Specifies if this conversation is a group chat
           example: false
         name:
           type: string
-          description: Username (for 1-on-1) or group name
+          description: Display name (username for individual, or group name)
           example: "Maria"
+          minLength: 1
+          maxLength: 64
         photo:
           type: string
           format: binary
-          description: Profile photo or group photo
+          description: Profile or group photo binary data
         lastMessageTimestamp:
           type: string
           format: date-time
-          description: Date and time of the latest message
+          description: ISO 8601 timestamp of the most recent message
           example: "2024-01-15T10:30:00Z"
         lastMessagePreview:
           type: string
-          description: Preview snippet of last message (or "Photo" for photo messages)
+          description: Truncated text of the last message
           example: "Hey, how are you?"
+          minLength: 0
+          maxLength: 100
         lastMessageIsPhoto:
           type: boolean
-          description: True if last message was a photo (show icon instead of text)
+          description: True if the last message in the thread was media
           example: false
 
     # Full conversation with messages
     Conversation:
       type: object
+      description: Complete details of a conversation thread including all history
       properties:
         conversationId:
           type: string
           description: Unique conversation identifier
         isGroup:
           type: boolean
-          description: True if this is a group conversation
+          description: True for group conversations
         name:
           type: string
-          description: Username (for 1-on-1) or group name
+          description: Name of the conversation
         photo:
           type: string
           format: binary
-          description: Profile photo or group photo
+          description: Image representing the conversation
         members:
           type: array
+          minItems: 1
+          maxItems: 1000
           items:
             $ref: '#/components/schemas/User'
-          description: Members (for group conversations)
+          description: List of users in this conversation (for groups)
         messages:
           type: array
+          minItems: 0
+          maxItems: 5000
           items:
             $ref: '#/components/schemas/Message'
-          description: All messages in reverse chronological order
+          description: Ordered list of messages in the conversation (newest first)
 
     # Error response
     Error:
       type: object
+      description: Standard error response object
       properties:
         message:
           type: string
-          description: Error message
+          description: Human-readable explanation of what went wrong
           example: "Username already taken"
+          minLength: 1
+          maxLength: 256
+
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      description: Targeted user identifier
+      required: true
+      schema:
+        type: string
+        minLength: 12
+        maxLength: 12
+        pattern: '^[a-f0-9]{12}$'
+
+    ConversationId:
+      name: conversationId
+      in: path
+      description: Unique conversation identifier
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+
+    MessageId:
+      name: messageId
+      in: path
+      description: Unique message identifier
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+
+    GroupId:
+      name: groupId
+      in: path
+      description: Group identifier
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
 
 #Paths for APIs
 paths:
@@ -204,16 +309,19 @@ paths:
         If the user exists, the user identifier is returned.
       operationId: doLogin
       requestBody:
-        description: User details
+        description: User nickname for identification
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Sign-in request body
               properties:
                 name:
                   type: string
+                  description: Nickname chosen by the user
                   example: Maria
-                  pattern: '^.*?$'
+                  pattern: '^[a-zA-Z0-9_-]+$'
                   minLength: 3
                   maxLength: 16
               required:
@@ -225,13 +333,19 @@ paths:
             application/json:
               schema:
                 type: object
+                description: Successful login response
                 properties:
                   identifier:
                     type: string
+                    description: The unique identifier assigned to the user
                     example: "abcdef012345"
+                    minLength: 12
+                    maxLength: 12
+                    pattern: '^[a-f0-9]{12}$'
 
-#APIs for user
   /users/{userId}/username:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
     put:
       tags: ["user"]
       summary: Update the user's username
@@ -241,31 +355,36 @@ paths:
       operationId: setMyUserName
       security:
         - bearerAuth: []
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: User identifier
       requestBody:
-        description: New username
+        description: The new nickname to set
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Username update request
               properties:
                 name:
                   type: string
+                  description: New nickname
                   minLength: 3
                   maxLength: 16
-                  pattern: '^.*?$'
+                  pattern: '^[a-zA-Z0-9_-]+$'
                   example: "NewName"
               required:
                 - name
       responses:
         '200':
           description: Username updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty successful response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '400':
           description: Invalid username format
           content:
@@ -279,9 +398,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /users/{userId}/photo:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
     put:
       tags: ["user"]
       summary: Set the user's profile photo
@@ -289,27 +414,39 @@ paths:
       operationId: setMyPhoto
       security:
         - bearerAuth: []
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: User identifier
       requestBody:
-        description: Profile photo
+        description: The image file data
+        required: true
         content:
           image/*:
             schema:
               type: string
               format: binary
+              description: Binary image data
       responses:
         '200':
           description: Photo updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty successful response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '400':
           description: Invalid photo format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /users:
     get:
@@ -327,6 +464,9 @@ paths:
           required: false
           schema:
             type: string
+            description: Search query string
+            minLength: 1
+            maxLength: 64
           description: Username to search for (partial match)
       responses:
         '200':
@@ -335,23 +475,25 @@ paths:
             application/json:
               schema:
                 type: array
+                description: Array of users matching the search
+                minItems: 0
+                maxItems: 100
                 items:
                   $ref: '#/components/schemas/User'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-#APIs for conversation
   /conversations:
     get:
       tags: ["conversation"]
       summary: Get list of all conversations
       description: |
         Returns a list of conversations with other users or groups,
-        sorted in reverse chronological order. Each element displays:
-        - Username or group name
-        - Profile/group photo
-        - Date and time of latest message
-        - Preview of text message or icon for photo
+        sorted in reverse chronological order.
       operationId: getMyConversations
       security:
         - bearerAuth: []
@@ -362,33 +504,30 @@ paths:
             application/json:
               schema:
                 type: array
+                description: Array of conversation summaries
+                minItems: 0
+                maxItems: 1000
                 items:
                   $ref: '#/components/schemas/ConversationPreview'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /conversations/{conversationId}:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
     get:
       tags: ["conversation"]
       summary: Get a specific conversation with all messages
       description: |
         Opens a conversation to view all exchanged messages,
-        displayed in reverse chronological order. Each message includes:
-        - Timestamp
-        - Content (text or photo)
-        - Sender username (for received messages)
-        - Checkmarks for sent messages (one/two)
-        - Reactions with usernames
+        displayed in reverse chronological order.
       operationId: getConversation
       security:
         - bearerAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Conversation identifier
       responses:
         '200':
           description: Conversation with messages
@@ -397,12 +536,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/Conversation'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-#APIs for message
   /conversations/{conversationId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
     post:
       tags: ["message"]
       summary: Send a new message
@@ -412,39 +560,41 @@ paths:
       operationId: sendMessage
       security:
         - bearerAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Conversation identifier
       requestBody:
-        description: Message content
+        description: The content of the message
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Text message request
               properties:
                 content:
                   type: string
                   description: Text content of the message
                   example: "Hello!"
+                  minLength: 1
+                  maxLength: 10000
                 replyTo:
                   type: string
                   description: Message ID to reply to (optional)
                   example: "msg100"
+                  minLength: 1
+                  maxLength: 64
           multipart/form-data:
             schema:
               type: object
+              description: Media message request
               properties:
                 photo:
                   type: string
                   format: binary
-                  description: Photo or GIF to send
+                  description: Photo or GIF data
                 replyTo:
                   type: string
                   description: Message ID to reply to (optional)
+                  minLength: 1
+                  maxLength: 64
       responses:
         '201':
           description: Message sent successfully
@@ -454,12 +604,27 @@ paths:
                 $ref: '#/components/schemas/Message'
         '400':
           description: Invalid message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /conversations/{conversationId}/messages/{messageId}/forward:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      - $ref: '#/components/parameters/MessageId'
     post:
       tags: ["message"]
       summary: Forward a message to another conversation
@@ -467,30 +632,21 @@ paths:
       operationId: forwardMessage
       security:
         - bearerAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Source conversation identifier
-        - name: messageId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Message to forward
       requestBody:
-        description: Target conversation
+        description: Destination of the forwarded message
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Forward request
               properties:
                 targetConversationId:
                   type: string
-                  description: Conversation to forward to
+                  description: Conversation ID where the message should be sent
                   example: "conv456"
+                  minLength: 1
+                  maxLength: 64
               required:
                 - targetConversationId
       responses:
@@ -501,142 +657,181 @@ paths:
               schema:
                 $ref: '#/components/schemas/Message'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Conversation or message not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /conversations/{conversationId}/messages/{messageId}:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      - $ref: '#/components/parameters/MessageId'
     delete:
       tags: ["message"]
       summary: Delete a sent message
       description: |
         Delete a message that was sent by the current user.
-        Users can only delete their own sent messages.
       operationId: deleteMessage
       security:
         - bearerAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Conversation identifier
-        - name: messageId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Message to delete
       responses:
         '204':
           description: Message deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty successful response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
-          description: Cannot delete messages sent by others
+          description: Permission denied (not your message)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Conversation or message not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-#APIs for comment
   /conversations/{conversationId}/messages/{messageId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      - $ref: '#/components/parameters/MessageId'
     post:
       tags: ["comment"]
       summary: Add a reaction (comment) to a message
-      description: |
-        React to a message with an emoticon.
-        Users can react to any message in their conversations.
+      description: React to a message with an emoticon.
       operationId: commentMessage
       security:
         - bearerAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: messageId
-          in: path
-          required: true
-          schema:
-            type: string
       requestBody:
-        description: Emoticon to react with
+        description: The emoticon for the reaction
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Reaction request body
               properties:
                 emoticon:
                   type: string
-                  description: Emoticon for the reaction
+                  description: Single emoji/emoticon character
                   example: "👍"
+                  minLength: 1
+                  maxLength: 8
               required:
                 - emoticon
       responses:
         '201':
           description: Reaction added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Success response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Conversation or message not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     delete:
       tags: ["comment"]
       summary: Remove a reaction (uncomment) from a message
-      description: |
-        Remove your own reaction from a message.
-        Users can delete their reactions at any time.
+      description: Remove your own reaction from a message.
       operationId: uncommentMessage
       security:
         - bearerAuth: []
-      parameters:
-        - name: conversationId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: messageId
-          in: path
-          required: true
-          schema:
-            type: string
       responses:
         '204':
           description: Reaction removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Success response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
-          description: Conversation, message, or reaction not found
+          description: Reaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-#APIs for group
   /groups:
     post:
       tags: ["group"]
       summary: Create a new group
       description: |
-        User can create a new group with any number of other WASAText users
-        to start a conversation.
+        User can create a new group with any number of other WASAText users.
       operationId: createGroup
       security:
         - bearerAuth: []
       requestBody:
-        description: Group details
+        description: Details of the new group and initial members
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Group creation request
               properties:
                 name:
                   type: string
-                  description: Group name
+                  description: Descriptive name for the group
                   example: "Study Group"
+                  minLength: 1
+                  maxLength: 64
                 memberIds:
                   type: array
+                  description: Initial list of member identifiers
+                  minItems: 1
+                  maxItems: 1000
                   items:
                     type: string
-                  description: User IDs to add to the group
-                  example: ["user1", "user2"]
+                    minLength: 12
+                    maxLength: 12
+                    pattern: '^[a-f0-9]{12}$'
+                  example: ["abcdef012345", "fedcba987654"]
               required:
                 - name
                 - memberIds
@@ -649,52 +844,85 @@ paths:
                 $ref: '#/components/schemas/Group'
         '400':
           description: Invalid group data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /groups/{groupId}/members:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
     post:
       tags: ["group"]
       summary: Add a user to the group
-      description: |
-        Group members can add other users to the group.
-        Users cannot join groups on their own.
+      description: Group members can add other users to the group.
       operationId: addToGroup
       security:
         - bearerAuth: []
-      parameters:
-        - name: groupId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Group identifier
       requestBody:
-        description: User to add
+        description: ID of the user to be added
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Add member request
               properties:
                 userId:
                   type: string
-                  description: User ID to add
+                  description: Identifier of the user to invite
                   example: "user123"
+                  minLength: 12
+                  maxLength: 12
+                  pattern: '^[a-f0-9]{12}$'
               required:
                 - userId
       responses:
         '201':
           description: User added to group successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Success response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '400':
           description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
-          description: Not a member of this group
+          description: Permission denied (not a group member)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Group or user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /groups/{groupId}/members/me:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
     delete:
       tags: ["group"]
       summary: Leave a group
@@ -702,22 +930,34 @@ paths:
       operationId: leaveGroup
       security:
         - bearerAuth: []
-      parameters:
-        - name: groupId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Group identifier
       responses:
         '204':
           description: Left the group successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Success response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Group not found or not a member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /groups/{groupId}/name:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
     put:
       tags: ["group"]
       summary: Set the group name
@@ -725,39 +965,63 @@ paths:
       operationId: setGroupName
       security:
         - bearerAuth: []
-      parameters:
-        - name: groupId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Group identifier
       requestBody:
-        description: New group name
+        description: The new group name string
+        required: true
         content:
           application/json:
             schema:
               type: object
+              description: Rename request
               properties:
                 name:
                   type: string
-                  description: New group name
+                  description: New name for the group
                   example: "New Group Name"
+                  minLength: 1
+                  maxLength: 64
               required:
                 - name
       responses:
         '200':
           description: Group name updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Success response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '400':
           description: Invalid name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
-          description: Not a member of this group
+          description: Permission denied (not a member)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /groups/{groupId}/photo:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
     put:
       tags: ["group"]
       summary: Set the group photo
@@ -765,28 +1029,48 @@ paths:
       operationId: setGroupPhoto
       security:
         - bearerAuth: []
-      parameters:
-        - name: groupId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Group identifier
       requestBody:
-        description: Group photo
+        description: Binary image file
+        required: true
         content:
           image/*:
             schema:
               type: string
               format: binary
+              description: Image file data
       responses:
         '200':
           description: Group photo updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Success response
+                properties:
+                  status:
+                    type: string
+                    example: "success"
         '400':
           description: Invalid photo format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
-          description: Not a member of this group
+          description: Permission denied (not a member)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
