@@ -7,6 +7,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 
 	"github.com/gofrs/uuid"
 )
@@ -49,7 +50,7 @@ func (db *appdbimpl) GetUserByName(name string) (*User, error) {
 		name,
 	).Scan(&user.ID, &user.Name, &photo)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
@@ -73,7 +74,7 @@ func (db *appdbimpl) GetUserByID(id string) (*User, error) {
 		id,
 	).Scan(&user.ID, &user.Name, &photo)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
 	if err != nil {

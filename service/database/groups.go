@@ -7,6 +7,8 @@ package database
 
 import (
 	"database/sql"
+	"errors"
+	"log"
 
 	"github.com/gofrs/uuid"
 )
@@ -24,7 +26,11 @@ func (db *appdbimpl) CreateGroup(name string, creatorID string, memberIDs []stri
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback() // Rollback if we don't commit
+	defer func() {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			log.Printf("Error rolling back transaction: %v", rbErr)
+		}
+	}()
 
 	// Create the group
 	_, err = tx.Exec("INSERT INTO groups (id, name) VALUES (?, ?)", id.String(), name)
@@ -106,7 +112,7 @@ func (db *appdbimpl) GetGroup(groupID string) (*Group, error) {
 		groupID,
 	).Scan(&group.ID, &group.Name, &photo)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrGroupNotFound
 	}
 	if err != nil {

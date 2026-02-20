@@ -7,6 +7,8 @@ package database
 
 import (
 	"database/sql"
+	"errors"
+	"log"
 
 	"github.com/gofrs/uuid"
 )
@@ -110,7 +112,7 @@ func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversati
 		conversationID,
 	).Scan(&conv.ID, &isGroup, &groupID)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrConversationNotFound
 	}
 	if err != nil {
@@ -263,7 +265,7 @@ func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (
 		return convID, nil // Already exists
 	}
 
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
 
@@ -277,7 +279,11 @@ func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			log.Printf("Error rolling back transaction: %v", rbErr)
+		}
+	}()
 
 	// Create conversation
 	_, err = tx.Exec(

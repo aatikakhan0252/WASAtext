@@ -11,11 +11,14 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"log"
 	"net/http"
 
-	"github.com/gorilla/mux"
 	"wasatext/service/database"
+
+	"github.com/gorilla/mux"
 )
 
 // LoginRequest is the body for POST /session
@@ -128,7 +131,7 @@ func (h *Handler) SetMyUserName(w http.ResponseWriter, r *http.Request) {
 
 	// Step 6: Update the username
 	err := h.db.UpdateUserName(userID, req.Name)
-	if err == database.ErrUsernameTaken {
+	if errors.Is(err, database.ErrUsernameTaken) {
 		writeJSON(w, http.StatusConflict, ErrorResponse{
 			Message: "Username already taken",
 		})
@@ -181,7 +184,7 @@ func (h *Handler) SetMyPhoto(w http.ResponseWriter, r *http.Request) {
 
 	// Step 5: Update the photo in database
 	err = h.db.UpdateUserPhoto(userID, photo)
-	if err == database.ErrUserNotFound {
+	if errors.Is(err, database.ErrUserNotFound) {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
@@ -238,5 +241,7 @@ func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("Error encoding JSON response: %v", err)
+	}
 }

@@ -1,17 +1,30 @@
 version: '3.8'
 
 services:
-  webapi:
-    build: .
-    image: wasa-app:latest
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: wasa-backend:latest
     ports:
       - "3000:3000"
     environment:
       - PORT=3000
       - WASATEXT_DB_FILENAME=/app/data/wasatext.db
     volumes:
-      # Persist the database file
-      # Mounting to /app/data/wasatext.db avoids the "is a directory" issue
-      # as /app/data is created as a directory in the Dockerfile
-      - ./wasatext.db:/app/data/wasatext.db
+      - wasatext-data:/app/data
     restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: wasa-frontend:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  wasatext-data:

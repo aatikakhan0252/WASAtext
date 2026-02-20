@@ -12,11 +12,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
-	"github.com/gorilla/mux"
 	"wasatext/service/database"
+
+	"github.com/gorilla/mux"
 )
 
 // CreateGroupRequest is the body for POST /groups
@@ -128,15 +130,15 @@ func (h *Handler) AddToGroup(w http.ResponseWriter, r *http.Request) {
 	// Step 4: Add the user to the group
 	// The database function checks if the adder is a member
 	err := h.db.AddUserToGroup(groupID, req.UserID, authUserID)
-	if err == database.ErrGroupNotFound {
+	if errors.Is(err, database.ErrGroupNotFound) {
 		http.Error(w, "Group not found", http.StatusNotFound)
 		return
 	}
-	if err == database.ErrNotGroupMember {
+	if errors.Is(err, database.ErrNotGroupMember) {
 		http.Error(w, "Not a member of this group", http.StatusForbidden)
 		return
 	}
-	if err == database.ErrUserNotFound {
+	if errors.Is(err, database.ErrUserNotFound) {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
@@ -170,11 +172,11 @@ func (h *Handler) LeaveGroup(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Remove the user from the group
 	err := h.db.RemoveUserFromGroup(groupID, authUserID)
-	if err == database.ErrGroupNotFound {
+	if errors.Is(err, database.ErrGroupNotFound) {
 		http.Error(w, "Group not found", http.StatusNotFound)
 		return
 	}
-	if err == database.ErrNotGroupMember {
+	if errors.Is(err, database.ErrNotGroupMember) {
 		http.Error(w, "Not a member of this group", http.StatusNotFound)
 		return
 	}
@@ -230,7 +232,7 @@ func (h *Handler) SetGroupName(w http.ResponseWriter, r *http.Request) {
 
 	// Step 5: Update the group name
 	err = h.db.UpdateGroupName(groupID, req.Name)
-	if err == database.ErrGroupNotFound {
+	if errors.Is(err, database.ErrGroupNotFound) {
 		http.Error(w, "Group not found", http.StatusNotFound)
 		return
 	}
@@ -286,7 +288,7 @@ func (h *Handler) SetGroupPhoto(w http.ResponseWriter, r *http.Request) {
 
 	// Step 5: Update the group photo
 	err = h.db.UpdateGroupPhoto(groupID, photo)
-	if err == database.ErrGroupNotFound {
+	if errors.Is(err, database.ErrGroupNotFound) {
 		http.Error(w, "Group not found", http.StatusNotFound)
 		return
 	}

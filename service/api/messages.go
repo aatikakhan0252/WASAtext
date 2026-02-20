@@ -12,12 +12,14 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 
-	"github.com/gorilla/mux"
 	"wasatext/service/database"
+
+	"github.com/gorilla/mux"
 )
 
 // SendMessageRequest is the body for POST /conversations/{id}/messages
@@ -58,7 +60,7 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Check if user is part of this conversation
 	_, err := h.db.GetConversation(authUserID, conversationID)
-	if err == database.ErrConversationNotFound {
+	if errors.Is(err, database.ErrConversationNotFound) {
 		http.Error(w, "Conversation not found", http.StatusNotFound)
 		return
 	}
@@ -83,7 +85,7 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		file, _, err := r.FormFile("photo")
-		if err == nil {
+		if err == nil { //nolint:goerr113
 			defer file.Close()
 			photo, _ = io.ReadAll(file)
 		}
@@ -157,7 +159,7 @@ func (h *Handler) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Check if user is part of source conversation
 	_, err := h.db.GetConversation(authUserID, conversationID)
-	if err == database.ErrConversationNotFound {
+	if errors.Is(err, database.ErrConversationNotFound) {
 		http.Error(w, "Conversation not found", http.StatusNotFound)
 		return
 	}
@@ -168,7 +170,7 @@ func (h *Handler) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 4: Get the message to forward
 	originalMsg, err := h.db.GetMessage(messageID)
-	if err == database.ErrMessageNotFound {
+	if errors.Is(err, database.ErrMessageNotFound) {
 		http.Error(w, "Message not found", http.StatusNotFound)
 		return
 	}
@@ -186,7 +188,7 @@ func (h *Handler) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 6: Check if user is part of target conversation
 	_, err = h.db.GetConversation(authUserID, req.TargetConversationID)
-	if err == database.ErrConversationNotFound {
+	if errors.Is(err, database.ErrConversationNotFound) {
 		http.Error(w, "Target conversation not found", http.StatusNotFound)
 		return
 	}
@@ -239,11 +241,11 @@ func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Delete the message
 	err := h.db.DeleteMessage(messageID, authUserID)
-	if err == database.ErrMessageNotFound {
+	if errors.Is(err, database.ErrMessageNotFound) {
 		http.Error(w, "Message not found", http.StatusNotFound)
 		return
 	}
-	if err == database.ErrNotMessageOwner {
+	if errors.Is(err, database.ErrNotMessageOwner) {
 		http.Error(w, "Cannot delete messages sent by others", http.StatusForbidden)
 		return
 	}
@@ -278,7 +280,7 @@ func (h *Handler) CommentMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Check if user is part of this conversation
 	_, err := h.db.GetConversation(authUserID, conversationID)
-	if err == database.ErrConversationNotFound {
+	if errors.Is(err, database.ErrConversationNotFound) {
 		http.Error(w, "Conversation not found", http.StatusNotFound)
 		return
 	}
@@ -301,7 +303,7 @@ func (h *Handler) CommentMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 5: Add the comment
 	err = h.db.AddComment(messageID, authUserID, req.Emoticon)
-	if err == database.ErrMessageNotFound {
+	if errors.Is(err, database.ErrMessageNotFound) {
 		http.Error(w, "Message not found", http.StatusNotFound)
 		return
 	}
@@ -335,7 +337,7 @@ func (h *Handler) UncommentMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Remove the comment
 	err := h.db.RemoveComment(messageID, authUserID)
-	if err == database.ErrCommentNotFound {
+	if errors.Is(err, database.ErrCommentNotFound) {
 		http.Error(w, "Comment not found", http.StatusNotFound)
 		return
 	}

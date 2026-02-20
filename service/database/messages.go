@@ -8,6 +8,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -105,7 +106,7 @@ func (db *appdbimpl) GetMessage(messageID string) (*Message, error) {
 		&replyTo,
 	)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrMessageNotFound
 	}
 	if err != nil {
@@ -141,7 +142,7 @@ func (db *appdbimpl) DeleteMessage(messageID, userID string) error {
 		messageID,
 	).Scan(&senderID)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrMessageNotFound
 	}
 	if err != nil {

@@ -7,7 +7,7 @@ This package follows the project structure guidelines for the WASA course.
 package main
 
 import (
-	"fmt"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -21,14 +21,13 @@ import (
 // Main entry point
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		log.Printf("error: %v", err)
 	}
 }
 
 // run performs the server setup and execution
 func run() error {
-	fmt.Println("Starting WASAText server...")
+	log.Println("Starting WASAText server...")
 
 	// Just a dummy usage of rate limiter dependency to force vendoring
 	_ = rate.NewLimiter(1, 5)
@@ -46,9 +45,13 @@ func run() error {
 	}
 	db, err := database.New(dbPath)
 	if err != nil {
-		return fmt.Errorf("error initializing database: %w", err)
+		return errors.New("error initializing database: " + err.Error())
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Error closing database: %v", err)
+		}
+	}()
 
 	// Step 3: Create the API handler
 	apiHandler := api.New(db)
@@ -72,7 +75,7 @@ func run() error {
 
 	err = http.ListenAndServe(":"+port, handler)
 	if err != nil {
-		return fmt.Errorf("server failed to start: %w", err)
+		return errors.New("server failed to start: " + err.Error())
 	}
 
 	return nil

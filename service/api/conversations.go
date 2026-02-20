@@ -10,10 +10,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
-	"github.com/gorilla/mux"
 	"wasatext/service/database"
+
+	"github.com/gorilla/mux"
 )
 
 // ConversationPreviewResponse is used for the conversation list
@@ -138,7 +140,7 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Get conversation from database
 	conv, err := h.db.GetConversation(authUserID, conversationID)
-	if err == database.ErrConversationNotFound {
+	if errors.Is(err, database.ErrConversationNotFound) {
 		http.Error(w, "Conversation not found", http.StatusNotFound)
 		return
 	}
@@ -221,7 +223,7 @@ func (h *Handler) StartConversation(w http.ResponseWriter, r *http.Request) {
 
 	// Step 3: Check if the other user exists
 	_, err := h.db.GetUserByID(req.UserID)
-	if err == database.ErrUserNotFound {
+	if errors.Is(err, database.ErrUserNotFound) {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}

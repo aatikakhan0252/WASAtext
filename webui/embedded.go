@@ -4,5 +4,5 @@ import "embed"
 
 // Content holds our static web server content.
 //
-//go:embed *
+//go:embed dist/*
 var Content embed.FS
