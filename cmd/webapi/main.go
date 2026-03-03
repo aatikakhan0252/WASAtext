@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"wasatext/service/api"
 	"wasatext/service/database"
@@ -43,7 +44,17 @@ func run() error {
 	if dbPath == "" {
 		dbPath = "wasatext.db"
 	}
-	db, err := database.New(dbPath)
+	db, err := func() (database.AppDatabase, error) {
+		// Ensure the parent directory for the database file exists.
+		// This is needed when running in Docker where /app/data may not exist.
+		if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
+			if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
+				return nil, errors.New("error creating database directory: " + mkErr.Error())
+			}
+		}
+		return database.New(dbPath)
+	}()
+
 	if err != nil {
 		return errors.New("error initializing database: " + err.Error())
 	}
