@@ -1,9 +1,10 @@
 import axios from 'axios';
 
 const instance = axios.create({
-    baseURL: location.origin,
+    baseURL: __API_URL__,
     timeout: 10000,
 });
+
 
 // Interceptor to add Authorization header
 instance.interceptors.request.use((config) => {

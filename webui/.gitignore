@@ -1,5 +1,0 @@
-node_modules
-# Ignore dist build artifacts but keep the placeholder for go:embed
-dist/*
-!dist/.gitkeep
-.DS_Store

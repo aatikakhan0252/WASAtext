@@ -2,9 +2,10 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/webui
 COPY webui/package.json ./
-RUN yarn install
+# Use npm instead of yarn (no yarn.lock in repo)
+RUN npm install
 COPY webui/ ./
-RUN yarn build
+RUN npm run build
 
 # Build stage for backend
 FROM golang:1.24 AS backend-builder
@@ -29,14 +30,12 @@ WORKDIR /app
 
 # Copy backend binary (frontend is embedded inside it)
 COPY --from=backend-builder /app/webapi .
-# Copy demo config
-COPY demo/config.yaml /app/config.yaml
-# Create data directory for SQLite
+# Create data directory for SQLite (MkdirAll in main.go does this too, but belt + suspenders)
 RUN mkdir -p /app/data
 
 # Set environment variables
 ENV WASATEXT_DB_FILENAME=/app/data/wasatext.db
-ENV WASATEXT_WEB_APIHOST=:3000
+ENV PORT=3000
 
 EXPOSE 3000
 CMD ["./webapi"]
