@@ -1,13 +1,13 @@
 # Frontend Dockerfile
-# Serves the Vue.js frontend using nginx
+# Multi-stage build: Node to build, nginx to serve
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY webui/package.json ./
-RUN yarn install
+RUN npm install
 COPY webui/ ./
-RUN yarn build
+RUN npm run build
 
-# Serve with nginx
+# Serve with nginx Alpine
 FROM nginx:1.25-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 

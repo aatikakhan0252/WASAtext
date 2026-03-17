@@ -1,11 +1,4 @@
-/*
-Conversation API handlers.
-
-This file contains:
-- getMyConversations: Get list of all conversations
-- getConversation: Get a specific conversation with messages
-- startConversation: Start a new direct conversation
-*/
+// Package api — Conversation API handlers.
 package api
 
 import (
@@ -15,10 +8,10 @@ import (
 
 	"wasatext/service/database"
 
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 )
 
-// ConversationPreviewResponse is used for the conversation list
+// ConversationPreviewResponse is used for the conversation list.
 type ConversationPreviewResponse struct {
 	ConversationID     string `json:"conversationId"`
 	IsGroup            bool   `json:"isGroup"`
@@ -29,7 +22,7 @@ type ConversationPreviewResponse struct {
 	LastMessageIsPhoto bool   `json:"lastMessageIsPhoto"`
 }
 
-// ConversationResponse is the full conversation with messages
+// ConversationResponse is the full conversation with messages.
 type ConversationResponse struct {
 	ConversationID string            `json:"conversationId"`
 	IsGroup        bool              `json:"isGroup"`
@@ -39,7 +32,7 @@ type ConversationResponse struct {
 	Messages       []MessageResponse `json:"messages"`
 }
 
-// MessageResponse represents a message
+// MessageResponse represents a message.
 type MessageResponse struct {
 	MessageID  string            `json:"messageId"`
 	SenderID   string            `json:"senderId"`
@@ -47,51 +40,38 @@ type MessageResponse struct {
 	Content    string            `json:"content,omitempty"`
 	HasPhoto   bool              `json:"hasPhoto"`
 	Timestamp  string            `json:"timestamp"`
-	Status     string            `json:"status"` // sent, received, read
+	Status     string            `json:"status"`
 	ReplyTo    string            `json:"replyTo,omitempty"`
 	Comments   []CommentResponse `json:"comments"`
 }
 
-// CommentResponse represents a reaction
+// CommentResponse represents a reaction.
 type CommentResponse struct {
 	UserID   string `json:"userId"`
 	UserName string `json:"userName"`
 	Emoticon string `json:"emoticon"`
 }
 
-// StartConversationRequest is the body for POST /conversations
+// StartConversationRequest is the body for POST /conversations.
 type StartConversationRequest struct {
-	UserID string `json:"userId"` // User to start conversation with
+	UserID string `json:"userId"`
 }
 
-/*
-GetMyConversations handles GET /conversations
-operationId: getMyConversations
-
-From PDF:
-"The user is presented with a list of conversations with other users or
-with groups, sorted in reverse chronological order. Each element in the
-list must display the username of the other person or the group name,
-the user profile photo or the group photo, the date and time of the
-latest message, the preview (snippet) of the text message, or an icon
-for a photo message."
-*/
-func (h *Handler) GetMyConversations(w http.ResponseWriter, r *http.Request) {
-	// Step 1: Check authentication
+// GetMyConversations handles GET /conversations (operationId: getMyConversations).
+func (h *Handler) GetMyConversations(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	authUserID := getUserIDFromAuth(r)
 	if authUserID == "" {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Step 2: Get conversations from database
 	conversations, err := h.db.GetConversations(authUserID)
 	if err != nil {
+		h.logger.WithError(err).Error("failed to get conversations")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Step 3: Convert to response format
 	var response []ConversationPreviewResponse
 	for _, c := range conversations {
 		preview := ConversationPreviewResponse{
@@ -110,46 +90,30 @@ func (h *Handler) GetMyConversations(w http.ResponseWriter, r *http.Request) {
 		response = append(response, preview)
 	}
 
-	// Step 4: Return the conversations
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response, h.logger)
 }
 
-/*
-GetConversation handles GET /conversations/{conversationId}
-operationId: getConversation
-
-From PDF:
-"The user can open a conversation to view all exchanged messages,
-displayed in reverse chronological order. Each message includes the
-timestamp, the content (whether text or photo), and the sender's
-username for received messages, or one/two checkmarks to indicate
-the status of sent messages. Any reactions (comments) on messages
-are also displayed, along with the names of the users who posted them."
-*/
-func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
-	// Step 1: Check authentication
+// GetConversation handles GET /conversations/:conversationId (operationId: getConversation).
+func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	authUserID := getUserIDFromAuth(r)
 	if authUserID == "" {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Step 2: Get conversation ID from URL
-	vars := mux.Vars(r)
-	conversationID := vars["conversationId"]
+	conversationID := ps.ByName("conversationId")
 
-	// Step 3: Get conversation from database
 	conv, err := h.db.GetConversation(authUserID, conversationID)
 	if errors.Is(err, database.ErrConversationNotFound) {
 		http.Error(w, "Conversation not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
+		h.logger.WithError(err).Error("failed to get conversation")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Step 4: Convert to response format
 	response := ConversationResponse{
 		ConversationID: conv.ID,
 		IsGroup:        conv.IsGroup,
@@ -157,7 +121,6 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 		HasPhoto:       len(conv.Photo) > 0,
 	}
 
-	// Add members
 	for _, m := range conv.Members {
 		response.Members = append(response.Members, UserResponse{
 			Identifier: m.ID,
@@ -166,7 +129,6 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Add messages
 	for _, msg := range conv.Messages {
 		msgResp := MessageResponse{
 			MessageID:  msg.ID,
@@ -182,7 +144,6 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 			msgResp.ReplyTo = *msg.ReplyTo
 		}
 
-		// Add comments (reactions)
 		for _, c := range msg.Comments {
 			msgResp.Comments = append(msgResp.Comments, CommentResponse{
 				UserID:   c.UserID,
@@ -194,53 +155,42 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 		response.Messages = append(response.Messages, msgResp)
 	}
 
-	// Step 5: Return the conversation
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response, h.logger)
 }
 
-/*
-StartConversation handles POST /conversations
-This allows a user to start a new conversation with another user.
-
-From PDF:
-"The user can start a new conversation with any other user of WASAText,
-and this conversation will automatically be added to the list."
-*/
-func (h *Handler) StartConversation(w http.ResponseWriter, r *http.Request) {
-	// Step 1: Check authentication
+// StartConversation handles POST /conversations (operationId: startConversation).
+func (h *Handler) StartConversation(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	authUserID := getUserIDFromAuth(r)
 	if authUserID == "" {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Step 2: Parse request body
 	var req StartConversationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Step 3: Check if the other user exists
 	_, err := h.db.GetUserByID(req.UserID)
 	if errors.Is(err, database.ErrUserNotFound) {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
+		h.logger.WithError(err).Error("failed to look up user")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Step 4: Get or create the conversation
 	convID, err := h.db.GetOrCreateDirectConversation(authUserID, req.UserID)
 	if err != nil {
+		h.logger.WithError(err).Error("failed to start conversation")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Step 5: Return the conversation ID
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"conversationId": convID,
-	})
+	}, h.logger)
 }

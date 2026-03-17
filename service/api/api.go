@@ -1,115 +1,103 @@
-/*
-Package api provides the HTTP API handlers for WASAText.
-
-What is an API Handler?
-When a request comes in (like POST /session), the router calls
-the appropriate handler function. That function:
-1. Reads the request data
-2. Validates it
-3. Calls the database
-4. Returns a response
-
-This file sets up the router and CORS middleware.
-*/
+// Package api provides the HTTP API handlers for WASAText.
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"wasatext/service/database"
 
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
+	"github.com/sirupsen/logrus"
 )
 
-// Handler contains all API handler methods
+// Message status constants — no magic strings.
+const (
+	StatusSent     = "sent"
+	StatusReceived = "received"
+	StatusRead     = "read"
+)
+
+// Handler contains all API handler methods.
 type Handler struct {
-	db database.AppDatabase
+	db     database.AppDatabase
+	logger *logrus.Logger
 }
 
-// New creates a new API handler
-func New(db database.AppDatabase) *Handler {
-	return &Handler{db: db}
+// New creates a new API handler.
+func New(db database.AppDatabase, logger *logrus.Logger) *Handler {
+	return &Handler{db: db, logger: logger}
 }
 
-// NewRouter creates a new router with all routes
-func NewRouter(h *Handler) *mux.Router {
-	// Gorilla Mux is a popular Go router
-	// It matches URLs to handler functions
-	r := mux.NewRouter()
+// NewRouter creates a new httprouter.Router with all routes registered.
+func NewRouter(h *Handler) *httprouter.Router {
+	r := httprouter.New()
 
-	// ===========================================
-	// LOGIN API (from PDF - doLogin)
-	// ===========================================
-	r.HandleFunc("/session", h.DoLogin).Methods("POST", "OPTIONS")
+	// LOGIN
+	r.POST("/session", h.DoLogin)
 
-	// ===========================================
-	// USER APIs
-	// ===========================================
-	r.HandleFunc("/users", h.SearchUsers).Methods("GET", "OPTIONS")
-	r.HandleFunc("/users/{userId}/username", h.SetMyUserName).Methods("PUT", "OPTIONS")
-	r.HandleFunc("/users/{userId}/photo", h.SetMyPhoto).Methods("PUT", "OPTIONS")
+	// USERS
+	r.GET("/users", h.SearchUsers)
+	r.PUT("/users/:userId/username", h.SetMyUserName)
+	r.PUT("/users/:userId/photo", h.SetMyPhoto)
 
-	// ===========================================
-	// CONVERSATION APIs
-	// ===========================================
-	r.HandleFunc("/conversations", h.GetMyConversations).Methods("GET", "OPTIONS")
-	r.HandleFunc("/conversations", h.StartConversation).Methods("POST", "OPTIONS")
-	r.HandleFunc("/conversations/{conversationId}", h.GetConversation).Methods("GET", "OPTIONS")
+	// CONVERSATIONS
+	r.GET("/conversations", h.GetMyConversations)
+	r.POST("/conversations", h.StartConversation)
+	r.GET("/conversations/:conversationId", h.GetConversation)
 
-	// ===========================================
-	// MESSAGE APIs
-	// ===========================================
-	r.HandleFunc("/conversations/{conversationId}/messages", h.SendMessage).Methods("POST", "OPTIONS")
-	r.HandleFunc("/conversations/{conversationId}/messages/{messageId}", h.DeleteMessage).Methods("DELETE", "OPTIONS")
-	r.HandleFunc("/conversations/{conversationId}/messages/{messageId}/forward", h.ForwardMessage).Methods("POST", "OPTIONS")
+	// MESSAGES
+	r.POST("/conversations/:conversationId/messages", h.SendMessage)
+	r.DELETE("/conversations/:conversationId/messages/:messageId", h.DeleteMessage)
+	r.POST("/conversations/:conversationId/messages/:messageId/forward", h.ForwardMessage)
 
-	// ===========================================
-	// COMMENT (REACTION) APIs
-	// ===========================================
-	r.HandleFunc("/conversations/{conversationId}/messages/{messageId}/comments", h.CommentMessage).Methods("POST", "OPTIONS")
-	r.HandleFunc("/conversations/{conversationId}/messages/{messageId}/comments", h.UncommentMessage).Methods("DELETE", "OPTIONS")
+	// COMMENTS (REACTIONS)
+	r.POST("/conversations/:conversationId/messages/:messageId/comments", h.CommentMessage)
+	r.DELETE("/conversations/:conversationId/messages/:messageId/comments", h.UncommentMessage)
 
-	// ===========================================
-	// GROUP APIs
-	// ===========================================
-	r.HandleFunc("/groups", h.CreateGroup).Methods("POST", "OPTIONS")
-	r.HandleFunc("/groups/{groupId}/members", h.AddToGroup).Methods("POST", "OPTIONS")
-	r.HandleFunc("/groups/{groupId}/members/me", h.LeaveGroup).Methods("DELETE", "OPTIONS")
-	r.HandleFunc("/groups/{groupId}/name", h.SetGroupName).Methods("PUT", "OPTIONS")
-	r.HandleFunc("/groups/{groupId}/photo", h.SetGroupPhoto).Methods("PUT", "OPTIONS")
+	// GROUPS
+	r.POST("/groups", h.CreateGroup)
+	r.POST("/groups/:groupId/members", h.AddToGroup)
+	r.DELETE("/groups/:groupId/members/me", h.LeaveGroup)
+	r.PUT("/groups/:groupId/name", h.SetGroupName)
+	r.PUT("/groups/:groupId/photo", h.SetGroupPhoto)
 
 	return r
 }
 
-/*
-CorsMiddleware handles the CORS headers
-*/
+// CorsMiddleware handles CORS headers.
 func CorsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers (as specified in PDF)
-		w.Header().Set("Access-Control-Allow-Origin", "*")                                // Allow ALL origins
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS") // Allowed HTTP methods
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")     // Allowed request headers
-		w.Header().Set("Access-Control-Max-Age", "1")                                     // Cache preflight for 1 second (PDF requirement)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "1")
 
-		// Handle preflight requests
-		// Preflight = browser sends OPTIONS request first to check if actual request is allowed
-		if r.Method == "OPTIONS" {
+		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		// Continue to actual handler
 		next.ServeHTTP(w, r)
 	})
 }
 
-// Helper function to get user ID from Authorization header
+// getUserIDFromAuth extracts the user ID from the Authorization header.
 // Format: "Bearer <user-identifier>"
 func getUserIDFromAuth(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
-	if len(auth) > 7 && auth[:7] == "Bearer " {
-		return auth[7:]
+	const bearerPrefix = "Bearer "
+	if len(auth) > len(bearerPrefix) && auth[:len(bearerPrefix)] == bearerPrefix {
+		return auth[len(bearerPrefix):]
 	}
 	return ""
+}
+
+// writeJSON writes a JSON response with the given status code.
+func writeJSON(w http.ResponseWriter, status int, data interface{}, logger *logrus.Logger) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		logger.WithError(err).Error("failed to encode JSON response")
+	}
 }

@@ -3,7 +3,7 @@ info:
   title: WASAText API
   description: |
     API specification for WASAText messaging application.
-    Built according to the PDF specification - nothing more, nothing less.
+    Built according to the PDF specification.
   version: "1.0.0"
 
 tags:
@@ -20,7 +20,6 @@ tags:
   - name: group
     description: Group management operations
 
-# Security scheme using Bearer Authentication (user identifier)
 components:
   securitySchemes:
     bearerAuth:
@@ -29,18 +28,17 @@ components:
       description: Use the user identifier returned from doLogin
 
   schemas:
-    # Object for user
     User:
       type: object
       description: Representation of a user in the system
       properties:
         identifier:
           type: string
-          description: Unique user identifier (hexadecimal string)
+          description: Unique user identifier (UUID hex string)
           example: "abcdef012345"
-          minLength: 12
-          maxLength: 12
-          pattern: '^[a-f0-9]{12}$'
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         name:
           type: string
           description: Username chosen by the user (3-16 characters)
@@ -53,7 +51,6 @@ components:
           format: binary
           description: User profile photo in binary format (optional)
 
-    # Object for group
     Group:
       type: object
       description: Representation of a group conversation
@@ -71,6 +68,7 @@ components:
           example: "Study Group"
           minLength: 1
           maxLength: 64
+          pattern: '^[a-zA-Z0-9 _-]+$'
         photo:
           type: string
           format: binary
@@ -83,7 +81,6 @@ components:
             $ref: '#/components/schemas/User'
           description: List of users who are members of the group
 
-    # Object for message
     Message:
       type: object
       description: A single message within a conversation
@@ -94,25 +91,28 @@ components:
           example: "msg123"
           minLength: 1
           maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         senderId:
           type: string
           description: User identifier of the sender
           example: "abcdef012345"
-          minLength: 12
-          maxLength: 12
-          pattern: '^[a-f0-9]{12}$'
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         senderName:
           type: string
           description: Username of the sender
           example: "Maria"
           minLength: 3
           maxLength: 16
+          pattern: '^[a-zA-Z0-9_-]+$'
         content:
           type: string
           description: Text content of the message
           example: "Hello!"
           minLength: 0
           maxLength: 10000
+          pattern: '^[\s\S]*$'
         photo:
           type: string
           format: binary
@@ -122,6 +122,9 @@ components:
           format: date-time
           description: ISO 8601 date and time when the message was sent
           example: "2024-01-15T10:30:00Z"
+          minLength: 20
+          maxLength: 30
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         status:
           type: string
           enum: [sent, received, read]
@@ -130,12 +133,16 @@ components:
             - sent: message successfully reached the server
             - received: message delivered to the recipient
             - read: recipient opened the conversation
+          minLength: 4
+          maxLength: 8
+          pattern: '^(sent|received|read)$'
         replyTo:
           type: string
           description: Message ID of the parent message if this is a reply (optional)
           example: "msg100"
           minLength: 1
           maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         comments:
           type: array
           minItems: 0
@@ -144,7 +151,6 @@ components:
             $ref: '#/components/schemas/Comment'
           description: List of reactions/emoticons added to this message
 
-    # Comment (reaction) object
     Comment:
       type: object
       description: A reaction to a message using an emoticon
@@ -153,23 +159,24 @@ components:
           type: string
           description: User identifier of the person who reacted
           example: "abcdef012345"
-          minLength: 12
-          maxLength: 12
-          pattern: '^[a-f0-9]{12}$'
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         userName:
           type: string
           description: Username of the person who reacted
           example: "Maria"
           minLength: 3
           maxLength: 16
+          pattern: '^[a-zA-Z0-9_-]+$'
         emoticon:
           type: string
           description: The single emoticon character used as a reaction
           example: "👍"
           minLength: 1
           maxLength: 8
+          pattern: '^[\s\S]+$'
 
-    # Conversation object (for list view)
     ConversationPreview:
       type: object
       description: Summary of a conversation for the inbox list view
@@ -180,6 +187,7 @@ components:
           example: "conv123"
           minLength: 1
           maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         isGroup:
           type: boolean
           description: Specifies if this conversation is a group chat
@@ -190,6 +198,7 @@ components:
           example: "Maria"
           minLength: 1
           maxLength: 64
+          pattern: '^[a-zA-Z0-9 _-]+$'
         photo:
           type: string
           format: binary
@@ -199,18 +208,21 @@ components:
           format: date-time
           description: ISO 8601 timestamp of the most recent message
           example: "2024-01-15T10:30:00Z"
+          minLength: 20
+          maxLength: 30
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         lastMessagePreview:
           type: string
           description: Truncated text of the last message
           example: "Hey, how are you?"
           minLength: 0
           maxLength: 100
+          pattern: '^[\s\S]*$'
         lastMessageIsPhoto:
           type: boolean
           description: True if the last message in the thread was media
           example: false
 
-    # Full conversation with messages
     Conversation:
       type: object
       description: Complete details of a conversation thread including all history
@@ -218,12 +230,20 @@ components:
         conversationId:
           type: string
           description: Unique conversation identifier
+          example: "conv123"
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9_-]+$'
         isGroup:
           type: boolean
           description: True for group conversations
         name:
           type: string
           description: Name of the conversation
+          example: "Maria"
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9 _-]+$'
         photo:
           type: string
           format: binary
@@ -243,7 +263,6 @@ components:
             $ref: '#/components/schemas/Message'
           description: Ordered list of messages in the conversation (newest first)
 
-    # Error response
     Error:
       type: object
       description: Standard error response object
@@ -254,6 +273,7 @@ components:
           example: "Username already taken"
           minLength: 1
           maxLength: 256
+          pattern: '^[\s\S]+$'
 
   parameters:
     UserId:
@@ -263,9 +283,10 @@ components:
       required: true
       schema:
         type: string
-        minLength: 12
-        maxLength: 12
-        pattern: '^[a-f0-9]{12}$'
+        description: User identifier value
+        minLength: 1
+        maxLength: 64
+        pattern: '^[a-zA-Z0-9_-]+$'
 
     ConversationId:
       name: conversationId
@@ -274,8 +295,10 @@ components:
       required: true
       schema:
         type: string
+        description: Conversation identifier value
         minLength: 1
         maxLength: 64
+        pattern: '^[a-zA-Z0-9_-]+$'
 
     MessageId:
       name: messageId
@@ -284,8 +307,10 @@ components:
       required: true
       schema:
         type: string
+        description: Message identifier value
         minLength: 1
         maxLength: 64
+        pattern: '^[a-zA-Z0-9_-]+$'
 
     GroupId:
       name: groupId
@@ -294,10 +319,11 @@ components:
       required: true
       schema:
         type: string
+        description: Group identifier value
         minLength: 1
         maxLength: 64
+        pattern: '^[a-zA-Z0-9_-]+$'
 
-#Paths for APIs
 paths:
   /session:
     post:
@@ -339,9 +365,9 @@ paths:
                     type: string
                     description: The unique identifier assigned to the user
                     example: "abcdef012345"
-                    minLength: 12
-                    maxLength: 12
-                    pattern: '^[a-f0-9]{12}$'
+                    minLength: 1
+                    maxLength: 64
+                    pattern: '^[a-zA-Z0-9_-]+$'
 
   /users/{userId}/username:
     parameters:
@@ -384,21 +410,25 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Operation result status
                     example: "success"
+                    minLength: 1
+                    maxLength: 16
+                    pattern: '^[a-zA-Z]+$'
         '400':
           description: Invalid username format
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '409':
-          description: Username already taken
+        '401':
+          description: Unauthorized access
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '401':
-          description: Unauthorized access
+        '409':
+          description: Username already taken
           content:
             application/json:
               schema:
@@ -434,7 +464,11 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Operation result status
                     example: "success"
+                    minLength: 1
+                    maxLength: 16
+                    pattern: '^[a-zA-Z]+$'
         '400':
           description: Invalid photo format
           content:
@@ -467,6 +501,7 @@ paths:
             description: Search query string
             minLength: 1
             maxLength: 64
+            pattern: '^[a-zA-Z0-9_-]*$'
           description: Username to search for (partial match)
       responses:
         '200':
@@ -511,6 +546,63 @@ paths:
                   $ref: '#/components/schemas/ConversationPreview'
         '401':
           description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags: ["conversation"]
+      summary: Start a new conversation
+      description: |
+        The user can start a new conversation with any other user of
+        WASAText, and this conversation will automatically be added
+        to the list.
+      operationId: startConversation
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: The user to start a conversation with
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Start conversation request
+              properties:
+                userId:
+                  type: string
+                  description: Identifier of the user to start chatting with
+                  example: "abcdef012345"
+                  minLength: 1
+                  maxLength: 64
+                  pattern: '^[a-zA-Z0-9_-]+$'
+              required:
+                - userId
+      responses:
+        '201':
+          description: Conversation created or found successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Conversation created response
+                properties:
+                  conversationId:
+                    type: string
+                    description: Unique identifier of the conversation
+                    example: "conv123"
+                    minLength: 1
+                    maxLength: 64
+                    pattern: '^[a-zA-Z0-9_-]+$'
+        '401':
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Target user not found
           content:
             application/json:
               schema:
@@ -575,12 +667,14 @@ paths:
                   example: "Hello!"
                   minLength: 1
                   maxLength: 10000
+                  pattern: '^[\s\S]+$'
                 replyTo:
                   type: string
                   description: Message ID to reply to (optional)
                   example: "msg100"
                   minLength: 1
                   maxLength: 64
+                  pattern: '^[a-zA-Z0-9_-]+$'
           multipart/form-data:
             schema:
               type: object
@@ -595,6 +689,7 @@ paths:
                   description: Message ID to reply to (optional)
                   minLength: 1
                   maxLength: 64
+                  pattern: '^[a-zA-Z0-9_-]+$'
       responses:
         '201':
           description: Message sent successfully
@@ -647,6 +742,7 @@ paths:
                   example: "conv456"
                   minLength: 1
                   maxLength: 64
+                  pattern: '^[a-zA-Z0-9_-]+$'
               required:
                 - targetConversationId
       responses:
@@ -684,15 +780,6 @@ paths:
       responses:
         '204':
           description: Message deleted successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                description: Empty successful response
-                properties:
-                  status:
-                    type: string
-                    example: "success"
         '401':
           description: Unauthorized access
           content:
@@ -738,6 +825,7 @@ paths:
                   example: "👍"
                   minLength: 1
                   maxLength: 8
+                  pattern: '^[\s\S]+$'
               required:
                 - emoticon
       responses:
@@ -751,7 +839,11 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Operation result status
                     example: "success"
+                    minLength: 1
+                    maxLength: 16
+                    pattern: '^[a-zA-Z]+$'
         '401':
           description: Unauthorized access
           content:
@@ -775,15 +867,6 @@ paths:
       responses:
         '204':
           description: Reaction removed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                description: Success response
-                properties:
-                  status:
-                    type: string
-                    example: "success"
         '401':
           description: Unauthorized access
           content:
@@ -821,6 +904,7 @@ paths:
                   example: "Study Group"
                   minLength: 1
                   maxLength: 64
+                  pattern: '^[a-zA-Z0-9 _-]+$'
                 memberIds:
                   type: array
                   description: Initial list of member identifiers
@@ -828,9 +912,10 @@ paths:
                   maxItems: 1000
                   items:
                     type: string
-                    minLength: 12
-                    maxLength: 12
-                    pattern: '^[a-f0-9]{12}$'
+                    description: User identifier
+                    minLength: 1
+                    maxLength: 64
+                    pattern: '^[a-zA-Z0-9_-]+$'
                   example: ["abcdef012345", "fedcba987654"]
               required:
                 - name
@@ -877,10 +962,10 @@ paths:
                 userId:
                   type: string
                   description: Identifier of the user to invite
-                  example: "user123"
-                  minLength: 12
-                  maxLength: 12
-                  pattern: '^[a-f0-9]{12}$'
+                  example: "abcdef012345"
+                  minLength: 1
+                  maxLength: 64
+                  pattern: '^[a-zA-Z0-9_-]+$'
               required:
                 - userId
       responses:
@@ -894,7 +979,11 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Operation result status
                     example: "success"
+                    minLength: 1
+                    maxLength: 16
+                    pattern: '^[a-zA-Z]+$'
         '400':
           description: Invalid request
           content:
@@ -933,15 +1022,6 @@ paths:
       responses:
         '204':
           description: Left the group successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                description: Success response
-                properties:
-                  status:
-                    type: string
-                    example: "success"
         '401':
           description: Unauthorized access
           content:
@@ -980,6 +1060,7 @@ paths:
                   example: "New Group Name"
                   minLength: 1
                   maxLength: 64
+                  pattern: '^[a-zA-Z0-9 _-]+$'
               required:
                 - name
       responses:
@@ -993,7 +1074,11 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Operation result status
                     example: "success"
+                    minLength: 1
+                    maxLength: 16
+                    pattern: '^[a-zA-Z]+$'
         '400':
           description: Invalid name
           content:
@@ -1049,7 +1134,11 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Operation result status
                     example: "success"
+                    minLength: 1
+                    maxLength: 16
+                    pattern: '^[a-zA-Z]+$'
         '400':
           description: Invalid photo format
           content:

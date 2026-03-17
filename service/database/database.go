@@ -1,18 +1,4 @@
-/*
-Package database handles all data storage for WASAText.
-
-What is a Database?
-A database is like a filing cabinet that stores all your app's data:
-- Users (names, IDs, photos)
-- Messages (content, timestamps, who sent them)
-- Groups (name, members, photo)
-- Conversations (who is chatting with whom)
-
-We use SQLite because:
-- It's simple (just one file)
-- No need to install a separate database server
-- Perfect for learning and small applications
-*/
+// Package database handles all data storage for WASAText.
 package database
 
 import (
@@ -23,8 +9,14 @@ import (
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
 
+// Message status constants.
+const (
+	StatusSent     = "sent"
+	StatusReceived = "received"
+	StatusRead     = "read"
+)
+
 // AppDatabase is the interface for all database operations.
-// An interface is like a contract - it says WHAT methods must exist.
 type AppDatabase interface {
 	// User operations
 	CreateUser(name string) (string, error)
@@ -63,14 +55,14 @@ type AppDatabase interface {
 	Close() error
 }
 
-// User represents a WASAText user
+// User represents a WASAText user.
 type User struct {
 	ID    string
 	Name  string
 	Photo []byte
 }
 
-// Group represents a WASAText group
+// Group represents a WASAText group.
 type Group struct {
 	ID      string
 	Name    string
@@ -78,7 +70,7 @@ type Group struct {
 	Members []User
 }
 
-// Message represents a message in a conversation
+// Message represents a message in a conversation.
 type Message struct {
 	ID         string
 	SenderID   string
@@ -86,19 +78,19 @@ type Message struct {
 	Content    string
 	Photo      []byte
 	Timestamp  time.Time
-	Status     string // "sent", "received", "read"
+	Status     string
 	ReplyTo    *string
 	Comments   []Comment
 }
 
-// Comment represents a reaction on a message
+// Comment represents a reaction on a message.
 type Comment struct {
 	UserID   string
 	UserName string
 	Emoticon string
 }
 
-// ConversationPreview is used for the conversation list
+// ConversationPreview is used for the conversation list.
 type ConversationPreview struct {
 	ID                 string
 	IsGroup            bool
@@ -109,7 +101,7 @@ type ConversationPreview struct {
 	LastMessageIsPhoto bool
 }
 
-// Conversation contains full conversation details with messages
+// Conversation contains full conversation details with messages.
 type Conversation struct {
 	ID       string
 	IsGroup  bool
@@ -119,25 +111,22 @@ type Conversation struct {
 	Messages []Message
 }
 
-// appdbimpl implements the AppDatabase interface
+// appdbimpl implements the AppDatabase interface.
 type appdbimpl struct {
 	db *sql.DB
 }
 
-// New creates a new database connection and initializes tables
+// New creates a new database connection and initializes tables.
 func New(filepath string) (AppDatabase, error) {
-	// Open SQLite database (creates file if it doesn't exist)
 	db, err := sql.Open("sqlite3", filepath)
 	if err != nil {
 		return nil, err
 	}
 
-	// Test the connection
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
 
-	// Create tables if they don't exist
 	if err := createTables(db); err != nil {
 		return nil, err
 	}
@@ -145,9 +134,8 @@ func New(filepath string) (AppDatabase, error) {
 	return &appdbimpl{db: db}, nil
 }
 
-// createTables sets up all the database tables
+// createTables sets up all the database tables.
 func createTables(db *sql.DB) error {
-	// Users table
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
 			id TEXT PRIMARY KEY,
@@ -159,7 +147,6 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Groups table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS groups (
 			id TEXT PRIMARY KEY,
@@ -171,7 +158,6 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Group members table (links users to groups)
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS group_members (
 			group_id TEXT NOT NULL,
@@ -185,7 +171,6 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Conversations table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS conversations (
 			id TEXT PRIMARY KEY,
@@ -198,7 +183,6 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Conversation participants (for direct messages)
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS conversation_participants (
 			conversation_id TEXT NOT NULL,
@@ -213,7 +197,6 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Messages table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS messages (
 			id TEXT PRIMARY KEY,
@@ -233,7 +216,6 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Comments (reactions) table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS comments (
 			message_id TEXT NOT NULL,
@@ -251,12 +233,12 @@ func createTables(db *sql.DB) error {
 	return nil
 }
 
-// Close closes the database connection
+// Close closes the database connection.
 func (db *appdbimpl) Close() error {
 	return db.db.Close()
 }
 
-// Common errors
+// Common errors.
 var (
 	ErrUserNotFound         = errors.New("user not found")
 	ErrUsernameTaken        = errors.New("username already taken")

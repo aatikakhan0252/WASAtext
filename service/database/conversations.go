@@ -1,21 +1,16 @@
-/*
-Database operations for Conversations.
-
-This file handles getting conversation lists and conversation details.
-*/
+// Package database — Database operations for Conversations.
 package database
 
 import (
 	"database/sql"
 	"errors"
-	"log"
 
 	"github.com/gofrs/uuid"
+	"github.com/sirupsen/logrus"
 )
 
-// GetConversations returns all conversations for a user, sorted by latest message
+// GetConversations returns all conversations for a user, sorted by latest message.
 func (db *appdbimpl) GetConversations(userID string) ([]ConversationPreview, error) {
-	// Query for all conversations the user is part of
 	rows, err := db.db.Query(`
 		SELECT 
 			c.id,
@@ -45,7 +40,11 @@ func (db *appdbimpl) GetConversations(userID string) ([]ConversationPreview, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("failed to close rows")
+		}
+	}()
 
 	var conversations []ConversationPreview
 	for rows.Next() {
@@ -86,9 +85,8 @@ func (db *appdbimpl) GetConversations(userID string) ([]ConversationPreview, err
 	return conversations, rows.Err()
 }
 
-// GetConversation returns a full conversation with all messages
+// GetConversation returns a full conversation with all messages.
 func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversation, error) {
-	// First, check if user is a participant
 	var count int
 	err := db.db.QueryRow(
 		"SELECT COUNT(*) FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
@@ -102,7 +100,6 @@ func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversati
 		return nil, ErrConversationNotFound
 	}
 
-	// Get conversation info
 	var conv Conversation
 	var isGroup bool
 	var groupID sql.NullString
@@ -121,17 +118,15 @@ func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversati
 
 	conv.IsGroup = isGroup
 
-	// Get name and photo based on type
 	if isGroup && groupID.Valid {
-		group, err := db.GetGroup(groupID.String)
-		if err != nil {
-			return nil, err
+		group, groupErr := db.GetGroup(groupID.String)
+		if groupErr != nil {
+			return nil, groupErr
 		}
 		conv.Name = group.Name
 		conv.Photo = group.Photo
 		conv.Members = group.Members
 	} else {
-		// Direct conversation - get the other user
 		var otherUser User
 		var photo sql.NullString
 
@@ -152,20 +147,20 @@ func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversati
 		}
 	}
 
-	// Get messages in reverse chronological order (as per PDF)
-	messages, err := db.getConversationMessages(conversationID)
-	if err != nil {
-		return nil, err
+	messages, msgErr := db.getConversationMessages(conversationID)
+	if msgErr != nil {
+		return nil, msgErr
 	}
 	conv.Messages = messages
 
-	// Mark conversation as read (this updates message status)
-	_ = db.MarkConversationAsRead(conversationID, userID)
+	if markErr := db.MarkConversationAsRead(conversationID, userID); markErr != nil {
+		logrus.WithError(markErr).Warn("failed to mark conversation as read")
+	}
 
 	return &conv, nil
 }
 
-// getConversationMessages retrieves all messages for a conversation
+// getConversationMessages retrieves all messages for a conversation.
 func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, error) {
 	rows, err := db.db.Query(`
 		SELECT m.id, m.sender_id, u.name, m.content, m.photo, m.timestamp, m.status, m.reply_to
@@ -178,7 +173,11 @@ func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("failed to close rows")
+		}
+	}()
 
 	var messages []Message
 	for rows.Next() {
@@ -210,10 +209,9 @@ func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, 
 			msg.ReplyTo = &replyTo.String
 		}
 
-		// Get comments for this message
-		comments, err := db.getMessageComments(msg.ID)
-		if err != nil {
-			return nil, err
+		comments, commentErr := db.getMessageComments(msg.ID)
+		if commentErr != nil {
+			return nil, commentErr
 		}
 		msg.Comments = comments
 
@@ -223,7 +221,7 @@ func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, 
 	return messages, rows.Err()
 }
 
-// getMessageComments retrieves all comments (reactions) on a message
+// getMessageComments retrieves all comments (reactions) on a message.
 func (db *appdbimpl) getMessageComments(messageID string) ([]Comment, error) {
 	rows, err := db.db.Query(`
 		SELECT c.user_id, u.name, c.emoticon
@@ -235,7 +233,11 @@ func (db *appdbimpl) getMessageComments(messageID string) ([]Comment, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("failed to close rows")
+		}
+	}()
 
 	var comments []Comment
 	for rows.Next() {
@@ -249,9 +251,8 @@ func (db *appdbimpl) getMessageComments(messageID string) ([]Comment, error) {
 	return comments, rows.Err()
 }
 
-// GetOrCreateDirectConversation gets or creates a direct conversation between two users
+// GetOrCreateDirectConversation gets or creates a direct conversation between two users.
 func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (string, error) {
-	// Check if conversation already exists
 	var convID string
 	err := db.db.QueryRow(`
 		SELECT cp1.conversation_id 
@@ -262,14 +263,13 @@ func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (
 	`, userID, otherUserID).Scan(&convID)
 
 	if err == nil {
-		return convID, nil // Already exists
+		return convID, nil
 	}
 
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
 
-	// Create new conversation
 	id, err := uuid.NewV4()
 	if err != nil {
 		return "", err
@@ -279,13 +279,8 @@ func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if rbErr := tx.Rollback(); rbErr != nil {
-			log.Printf("Error rolling back transaction: %v", rbErr)
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
-	// Create conversation
 	_, err = tx.Exec(
 		"INSERT INTO conversations (id, is_group) VALUES (?, 0)",
 		id.String(),
@@ -294,7 +289,6 @@ func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (
 		return "", err
 	}
 
-	// Add both participants
 	_, err = tx.Exec(
 		"INSERT INTO conversation_participants (conversation_id, user_id) VALUES (?, ?)",
 		id.String(), userID,
@@ -318,9 +312,8 @@ func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (
 	return id.String(), nil
 }
 
-// MarkConversationAsRead marks all messages in a conversation as read for a user
+// MarkConversationAsRead marks all messages in a conversation as read for a user.
 func (db *appdbimpl) MarkConversationAsRead(conversationID, userID string) error {
-	// Update the last_read_time for this user
 	_, err := db.db.Exec(`
 		UPDATE conversation_participants 
 		SET last_read_time = CURRENT_TIMESTAMP 
@@ -330,13 +323,11 @@ func (db *appdbimpl) MarkConversationAsRead(conversationID, userID string) error
 		return err
 	}
 
-	// Update message status to 'read' for messages sent by others
-	// This is simplified - in real app, you'd track per-user read status
 	_, err = db.db.Exec(`
 		UPDATE messages 
-		SET status = 'read' 
-		WHERE conversation_id = ? AND sender_id != ? AND status != 'read'
-	`, conversationID, userID)
+		SET status = ? 
+		WHERE conversation_id = ? AND sender_id != ? AND status != ?
+	`, StatusRead, conversationID, userID, StatusRead)
 
 	return err
 }

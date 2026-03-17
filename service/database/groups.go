@@ -1,44 +1,32 @@
-/*
-Database operations for Groups.
-
-This file handles creating groups, adding/removing members, etc.
-*/
+// Package database — Database operations for Groups.
 package database
 
 import (
 	"database/sql"
 	"errors"
-	"log"
 
 	"github.com/gofrs/uuid"
+	"github.com/sirupsen/logrus"
 )
 
-// CreateGroup creates a new group and adds the creator and initial members
+// CreateGroup creates a new group and adds the creator and initial members.
 func (db *appdbimpl) CreateGroup(name string, creatorID string, memberIDs []string) (*Group, error) {
-	// Generate group ID
 	id, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
 	}
 
-	// Start a transaction (all or nothing - if one step fails, roll back all)
 	tx, err := db.db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if rbErr := tx.Rollback(); rbErr != nil {
-			log.Printf("Error rolling back transaction: %v", rbErr)
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
-	// Create the group
 	_, err = tx.Exec("INSERT INTO groups (id, name) VALUES (?, ?)", id.String(), name)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create a conversation for this group
 	convID, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
@@ -51,7 +39,6 @@ func (db *appdbimpl) CreateGroup(name string, creatorID string, memberIDs []stri
 		return nil, err
 	}
 
-	// Add the creator as a member
 	_, err = tx.Exec(
 		"INSERT INTO group_members (group_id, user_id) VALUES (?, ?)",
 		id.String(), creatorID,
@@ -60,7 +47,6 @@ func (db *appdbimpl) CreateGroup(name string, creatorID string, memberIDs []stri
 		return nil, err
 	}
 
-	// Add creator to conversation participants
 	_, err = tx.Exec(
 		"INSERT INTO conversation_participants (conversation_id, user_id) VALUES (?, ?)",
 		convID.String(), creatorID,
@@ -69,10 +55,9 @@ func (db *appdbimpl) CreateGroup(name string, creatorID string, memberIDs []stri
 		return nil, err
 	}
 
-	// Add other members
 	for _, memberID := range memberIDs {
 		if memberID == creatorID {
-			continue // Skip if already added
+			continue
 		}
 
 		_, err = tx.Exec(
@@ -92,21 +77,18 @@ func (db *appdbimpl) CreateGroup(name string, creatorID string, memberIDs []stri
 		}
 	}
 
-	// Commit the transaction
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
-	// Return the created group
 	return db.GetGroup(id.String())
 }
 
-// GetGroup retrieves a group by ID with all its members
+// GetGroup retrieves a group by ID with all its members.
 func (db *appdbimpl) GetGroup(groupID string) (*Group, error) {
 	var group Group
 	var photo sql.NullString
 
-	// Get group info
 	err := db.db.QueryRow(
 		"SELECT id, name, photo FROM groups WHERE id = ?",
 		groupID,
@@ -123,7 +105,6 @@ func (db *appdbimpl) GetGroup(groupID string) (*Group, error) {
 		group.Photo = []byte(photo.String)
 	}
 
-	// Get group members
 	rows, err := db.db.Query(`
 		SELECT u.id, u.name, u.photo 
 		FROM users u 
@@ -133,7 +114,11 @@ func (db *appdbimpl) GetGroup(groupID string) (*Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("failed to close rows")
+		}
+	}()
 
 	for rows.Next() {
 		var user User
@@ -153,10 +138,8 @@ func (db *appdbimpl) GetGroup(groupID string) (*Group, error) {
 	return &group, rows.Err()
 }
 
-// AddUserToGroup adds a user to a group
-// Only existing group members can add others (enforced in API layer)
+// AddUserToGroup adds a user to a group.
 func (db *appdbimpl) AddUserToGroup(groupID, userID, adderID string) error {
-	// Check if adder is a member
 	isMember, err := db.IsGroupMember(groupID, adderID)
 	if err != nil {
 		return err
@@ -165,13 +148,11 @@ func (db *appdbimpl) AddUserToGroup(groupID, userID, adderID string) error {
 		return ErrNotGroupMember
 	}
 
-	// Check if user to add exists
 	_, err = db.GetUserByID(userID)
 	if err != nil {
 		return err
 	}
 
-	// Get the conversation ID for this group
 	var convID string
 	err = db.db.QueryRow(
 		"SELECT id FROM conversations WHERE group_id = ?",
@@ -181,7 +162,6 @@ func (db *appdbimpl) AddUserToGroup(groupID, userID, adderID string) error {
 		return err
 	}
 
-	// Add to group_members
 	_, err = db.db.Exec(
 		"INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)",
 		groupID, userID,
@@ -190,7 +170,6 @@ func (db *appdbimpl) AddUserToGroup(groupID, userID, adderID string) error {
 		return err
 	}
 
-	// Add to conversation_participants
 	_, err = db.db.Exec(
 		"INSERT OR IGNORE INTO conversation_participants (conversation_id, user_id) VALUES (?, ?)",
 		convID, userID,
@@ -199,9 +178,8 @@ func (db *appdbimpl) AddUserToGroup(groupID, userID, adderID string) error {
 	return err
 }
 
-// RemoveUserFromGroup removes a user from a group (for leaving)
+// RemoveUserFromGroup removes a user from a group (for leaving).
 func (db *appdbimpl) RemoveUserFromGroup(groupID, userID string) error {
-	// Check if user is a member
 	isMember, err := db.IsGroupMember(groupID, userID)
 	if err != nil {
 		return err
@@ -210,7 +188,6 @@ func (db *appdbimpl) RemoveUserFromGroup(groupID, userID string) error {
 		return ErrNotGroupMember
 	}
 
-	// Get the conversation ID for this group
 	var convID string
 	err = db.db.QueryRow(
 		"SELECT id FROM conversations WHERE group_id = ?",
@@ -220,7 +197,6 @@ func (db *appdbimpl) RemoveUserFromGroup(groupID, userID string) error {
 		return err
 	}
 
-	// Remove from group_members
 	_, err = db.db.Exec(
 		"DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
 		groupID, userID,
@@ -229,7 +205,6 @@ func (db *appdbimpl) RemoveUserFromGroup(groupID, userID string) error {
 		return err
 	}
 
-	// Remove from conversation_participants
 	_, err = db.db.Exec(
 		"DELETE FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
 		convID, userID,
@@ -238,7 +213,7 @@ func (db *appdbimpl) RemoveUserFromGroup(groupID, userID string) error {
 	return err
 }
 
-// UpdateGroupName changes the group's name
+// UpdateGroupName changes the group's name.
 func (db *appdbimpl) UpdateGroupName(groupID, name string) error {
 	result, err := db.db.Exec(
 		"UPDATE groups SET name = ? WHERE id = ?",
@@ -259,7 +234,7 @@ func (db *appdbimpl) UpdateGroupName(groupID, name string) error {
 	return nil
 }
 
-// UpdateGroupPhoto sets or updates the group's photo
+// UpdateGroupPhoto sets or updates the group's photo.
 func (db *appdbimpl) UpdateGroupPhoto(groupID string, photo []byte) error {
 	result, err := db.db.Exec(
 		"UPDATE groups SET photo = ? WHERE id = ?",
@@ -280,7 +255,7 @@ func (db *appdbimpl) UpdateGroupPhoto(groupID string, photo []byte) error {
 	return nil
 }
 
-// IsGroupMember checks if a user is a member of a group
+// IsGroupMember checks if a user is a member of a group.
 func (db *appdbimpl) IsGroupMember(groupID, userID string) (bool, error) {
 	var count int
 	err := db.db.QueryRow(

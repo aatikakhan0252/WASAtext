@@ -19,10 +19,10 @@ COPY webui/embedded.go webui/embedded.go
 # Copy the built frontend assets from the frontend-builder
 COPY --from=frontend-builder /app/webui/dist webui/dist
 
-# Build the Go binary (frontend is embedded via go:embed)
-RUN go build -mod=vendor -o webapi ./cmd/webapi/
+# Build the Go binary with CGO enabled (required for SQLite)
+RUN CGO_ENABLED=1 go build -mod=vendor -o webapi ./cmd/webapi/
 
-# Final stage
+# Final stage — lightweight Debian image
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
@@ -30,7 +30,7 @@ WORKDIR /app
 
 # Copy backend binary (frontend is embedded inside it)
 COPY --from=backend-builder /app/webapi .
-# Create data directory for SQLite (MkdirAll in main.go does this too, but belt + suspenders)
+# Create data directory for SQLite
 RUN mkdir -p /app/data
 
 # Set environment variables

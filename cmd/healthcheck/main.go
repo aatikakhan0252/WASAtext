@@ -1,38 +1,44 @@
-/*
-Package main is a health check utility for the WASAText server.
-
-It checks if the server is responding to HTTP requests.
-*/
+// Package main is a health check utility for the WASAText server.
 package main
 
 import (
-	"log"
 	"net/http"
 	"os"
+
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
+	logger := logrus.New()
+
 	if len(os.Args) < 2 {
-		log.Println("Usage: healthcheck <url>")
+		logger.Info("Usage: healthcheck <url>")
 		return
 	}
 
 	url := os.Args[1]
-	resp, err := http.Get(url) //nolint:gosec
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		log.Printf("Healthcheck failed: %v", err)
+		logger.WithError(err).Error("failed to create request")
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.WithError(err).Error("healthcheck failed")
 		return
 	}
 	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Printf("Error closing response body: %v", err)
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logger.WithError(closeErr).Error("error closing response body")
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Healthcheck failed: status %d", resp.StatusCode)
+		logger.WithField("status", resp.StatusCode).Error("healthcheck failed")
 		return
 	}
 
-	log.Println("Healthcheck passed")
+	logger.Info("healthcheck passed")
 }

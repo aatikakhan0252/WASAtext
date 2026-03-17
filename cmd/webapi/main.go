@@ -1,93 +1,117 @@
-/*
-Package main is the entry point for the WASAText web API server.
-
-It sets up the database, API router, and starts the HTTP server.
-This package follows the project structure guidelines for the WASA course.
-*/
+// Package main is the entry point for the WASAText web API server.
 package main
 
 import (
+	"context"
 	"errors"
-	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"wasatext/service/api"
 	"wasatext/service/database"
 
-	"golang.org/x/time/rate"
+	"github.com/sirupsen/logrus"
 )
 
-// Main entry point
 func main() {
 	if err := run(); err != nil {
-		log.Printf("error: %v", err)
+		logger := logrus.New()
+		logger.WithError(err).Error("application exited with error")
 	}
 }
 
-// run performs the server setup and execution
 func run() error {
-	log.Println("Starting WASAText server...")
+	logger := logrus.New()
+	logger.SetOutput(os.Stdout)
+	logger.SetLevel(logrus.InfoLevel)
 
-	// Just a dummy usage of rate limiter dependency to force vendoring
-	_ = rate.NewLimiter(1, 5)
+	logger.Info("Starting WASAText server...")
 
-	// Step 1: Get the port to listen on (default: 3000)
+	// Get the port to listen on (default: 3000).
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
 	}
 
-	// Step 2: Initialize the database
+	// Initialize the database.
 	dbPath := os.Getenv("WASATEXT_DB_FILENAME")
 	if dbPath == "" {
 		dbPath = "wasatext.db"
 	}
-	db, err := func() (database.AppDatabase, error) {
-		// Ensure the parent directory for the database file exists.
-		// This is needed when running in Docker where /app/data may not exist.
-		if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
-			if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
-				return nil, errors.New("error creating database directory: " + mkErr.Error())
-			}
-		}
-		return database.New(dbPath)
-	}()
 
+	// Ensure the parent directory for the database file exists.
+	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
+		if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
+			return errors.New("error creating database directory: " + mkErr.Error())
+		}
+	}
+
+	db, err := database.New(dbPath)
 	if err != nil {
 		return errors.New("error initializing database: " + err.Error())
 	}
 	defer func() {
-		if err := db.Close(); err != nil {
-			log.Printf("Error closing database: %v", err)
+		if closeErr := db.Close(); closeErr != nil {
+			logger.WithError(closeErr).Error("error closing database")
 		}
 	}()
 
-	// Step 3: Create the API handler
-	apiHandler := api.New(db)
-
-	// Step 4: Create the router
+	// Create the API handler and router.
+	apiHandler := api.New(db, logger)
 	router := api.NewRouter(apiHandler)
 
-	// Register WebUI
-	// This serves the frontend files (if embedded)
-	if err := registerWebUI(router); err != nil {
-		// Log warning but don't fail, as webui might be optional during dev
-		log.Printf("Warning: failed to register WebUI: %v", err)
+	// Register WebUI (serves the embedded frontend files).
+	if regErr := registerWebUI(router); regErr != nil {
+		logger.WithError(regErr).Warn("failed to register WebUI")
 	}
 
-	// Step 5: Start the server
-	log.Printf("WASAText server starting on port %s...", port)
-	log.Printf("API available at http://localhost:%s/", port)
-
-	// Wrap the router with CORS middleware
+	// Wrap the router with CORS middleware.
 	handler := api.CorsMiddleware(router)
 
-	err = http.ListenAndServe(":"+port, handler)
-	if err != nil {
-		return errors.New("server failed to start: " + err.Error())
+	// Create the HTTP server.
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// Graceful shutdown: listen for interrupt signals.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start the server in a goroutine.
+	errCh := make(chan error, 1)
+	go func() {
+		logger.WithField("port", port).Info("WASAText server listening")
+		if listenErr := srv.ListenAndServe(); listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
+			errCh <- listenErr
+		}
+		close(errCh)
+	}()
+
+	// Wait for shutdown signal or server error.
+	select {
+	case sig := <-quit:
+		logger.WithField("signal", sig.String()).Info("shutting down server")
+	case listenErr := <-errCh:
+		if listenErr != nil {
+			return errors.New("server failed: " + listenErr.Error())
+		}
+	}
+
+	// Shutdown with a timeout.
+	const shutdownTimeout = 30 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if shutdownErr := srv.Shutdown(ctx); shutdownErr != nil {
+		return errors.New("server shutdown failed: " + shutdownErr.Error())
+	}
+
+	logger.Info("server stopped gracefully")
 	return nil
 }
