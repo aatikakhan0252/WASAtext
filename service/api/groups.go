@@ -236,3 +236,20 @@ func (h *Handler) SetGroupPhoto(w http.ResponseWriter, r *http.Request, ps httpr
 
 	w.WriteHeader(http.StatusOK)
 }
+
+// GetGroupPhotoHandler handles GET /groups/:groupId/photo — serves photo as binary.
+func (h *Handler) GetGroupPhotoHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	groupID := ps.ByName("groupId")
+
+	photo, err := h.db.GetGroupPhoto(groupID)
+	if err != nil {
+		http.Error(w, "No photo", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-cache")
+	if _, writeErr := w.Write(photo); writeErr != nil {
+		h.logger.WithError(writeErr).Error("failed to write photo response")
+	}
+}

@@ -179,3 +179,23 @@ func (db *appdbimpl) SearchUsers(query string) ([]User, error) {
 
 	return users, rows.Err()
 }
+
+// GetUserPhoto retrieves just the photo bytes for a user.
+func (db *appdbimpl) GetUserPhoto(userID string) ([]byte, error) {
+	var photo sql.NullString
+	err := db.db.QueryRow(
+		"SELECT photo FROM users WHERE id = ?",
+		userID,
+	).Scan(&photo)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !photo.Valid || len(photo.String) == 0 {
+		return nil, ErrUserNotFound
+	}
+	return []byte(photo.String), nil
+}

@@ -119,6 +119,7 @@ func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversati
 	conv.IsGroup = isGroup
 
 	if isGroup && groupID.Valid {
+		conv.GroupID = groupID.String
 		group, groupErr := db.GetGroup(groupID.String)
 		if groupErr != nil {
 			return nil, groupErr
@@ -147,12 +148,13 @@ func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversati
 		}
 	}
 
-	messages, msgErr := db.getConversationMessages(conversationID)
+	messages, msgErr := db.getConversationMessages(conversationID, userID)
 	if msgErr != nil {
 		return nil, msgErr
 	}
 	conv.Messages = messages
 
+	// Mark as read for this user + update message statuses
 	if markErr := db.MarkConversationAsRead(conversationID, userID); markErr != nil {
 		logrus.WithError(markErr).Warn("failed to mark conversation as read")
 	}
@@ -160,14 +162,14 @@ func (db *appdbimpl) GetConversation(userID, conversationID string) (*Conversati
 	return &conv, nil
 }
 
-// getConversationMessages retrieves all messages for a conversation.
-func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, error) {
+// getConversationMessages retrieves all messages for a conversation with computed status.
+func (db *appdbimpl) getConversationMessages(conversationID, viewerID string) ([]Message, error) {
 	rows, err := db.db.Query(`
-		SELECT m.id, m.sender_id, u.name, m.content, m.photo, m.timestamp, m.status, m.reply_to
+		SELECT m.id, m.sender_id, u.name, m.content, m.photo, m.timestamp, m.status, m.reply_to, m.is_forwarded
 		FROM messages m
 		JOIN users u ON m.sender_id = u.id
 		WHERE m.conversation_id = ?
-		ORDER BY m.timestamp DESC
+		ORDER BY m.timestamp ASC
 	`, conversationID)
 
 	if err != nil {
@@ -179,12 +181,22 @@ func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, 
 		}
 	}()
 
+	// Get participant count for computing group read receipts
+	var participantCount int
+	if countErr := db.db.QueryRow(
+		"SELECT COUNT(*) FROM conversation_participants WHERE conversation_id = ?",
+		conversationID,
+	).Scan(&participantCount); countErr != nil {
+		return nil, countErr
+	}
+
 	var messages []Message
 	for rows.Next() {
 		var msg Message
 		var content sql.NullString
 		var photo sql.NullString
 		var replyTo sql.NullString
+		var isForwarded sql.NullBool
 
 		if err := rows.Scan(
 			&msg.ID,
@@ -195,6 +207,7 @@ func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, 
 			&msg.Timestamp,
 			&msg.Status,
 			&replyTo,
+			&isForwarded,
 		); err != nil {
 			return nil, err
 		}
@@ -208,6 +221,20 @@ func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, 
 		if replyTo.Valid {
 			msg.ReplyTo = &replyTo.String
 		}
+		if isForwarded.Valid {
+			msg.IsForwarded = isForwarded.Bool
+		}
+
+		// Compute effective status for this message
+		if msg.SenderID != viewerID {
+			// Messages from others: viewer is reading them now, so they are "read"
+			msg.Status = StatusRead
+		} else {
+			// Messages from self: compute based on how many recipients have read
+			msg.Status = db.computeMessageStatus(msg.ID, msg.SenderID, conversationID, participantCount)
+		}
+
+		db.fillReplySnippet(&msg)
 
 		comments, commentErr := db.getMessageComments(msg.ID)
 		if commentErr != nil {
@@ -219,6 +246,43 @@ func (db *appdbimpl) getConversationMessages(conversationID string) ([]Message, 
 	}
 
 	return messages, rows.Err()
+}
+
+// computeMessageStatus determines the display status for a sent message:
+// - "sent": no recipient has opened the conversation since the message was sent
+// - "received": at least one (but not all) recipients have read it (for groups)
+// - "read": ALL recipients have opened the conversation after the message timestamp
+func (db *appdbimpl) computeMessageStatus(messageID, senderID, conversationID string, participantCount int) string {
+	// Get the message timestamp
+	var msgTimestamp sql.NullTime
+	if err := db.db.QueryRow(
+		"SELECT timestamp FROM messages WHERE id = ?",
+		messageID,
+	).Scan(&msgTimestamp); err != nil || !msgTimestamp.Valid {
+		return StatusSent
+	}
+
+	// Count how many NON-SENDER participants have a last_read_time >= message timestamp
+	var readCount int
+	if err := db.db.QueryRow(`
+		SELECT COUNT(*) FROM conversation_participants 
+		WHERE conversation_id = ? AND user_id != ? AND last_read_time >= ?
+	`, conversationID, senderID, msgTimestamp.Time).Scan(&readCount); err != nil {
+		return StatusSent
+	}
+
+	otherParticipants := participantCount - 1
+	if otherParticipants <= 0 {
+		return StatusSent
+	}
+
+	if readCount >= otherParticipants {
+		return StatusRead
+	}
+	if readCount > 0 {
+		return StatusReceived
+	}
+	return StatusSent
 }
 
 // getMessageComments retrieves all comments (reactions) on a message.
@@ -312,22 +376,12 @@ func (db *appdbimpl) GetOrCreateDirectConversation(userID, otherUserID string) (
 	return id.String(), nil
 }
 
-// MarkConversationAsRead marks all messages in a conversation as read for a user.
+// MarkConversationAsRead updates this user's last_read_time to now.
 func (db *appdbimpl) MarkConversationAsRead(conversationID, userID string) error {
 	_, err := db.db.Exec(`
 		UPDATE conversation_participants 
 		SET last_read_time = CURRENT_TIMESTAMP 
 		WHERE conversation_id = ? AND user_id = ?
 	`, conversationID, userID)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.db.Exec(`
-		UPDATE messages 
-		SET status = ? 
-		WHERE conversation_id = ? AND sender_id != ? AND status != ?
-	`, StatusRead, conversationID, userID, StatusRead)
-
 	return err
 }

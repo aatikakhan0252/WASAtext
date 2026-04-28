@@ -40,6 +40,7 @@ func NewRouter(h *Handler) *httprouter.Router {
 	r.GET("/users", h.SearchUsers)
 	r.PUT("/users/:userId/username", h.SetMyUserName)
 	r.PUT("/users/:userId/photo", h.SetMyPhoto)
+	r.GET("/users/:userId/photo", h.GetUserPhoto)
 
 	// CONVERSATIONS
 	r.GET("/conversations", h.GetMyConversations)
@@ -50,6 +51,7 @@ func NewRouter(h *Handler) *httprouter.Router {
 	r.POST("/conversations/:conversationId/messages", h.SendMessage)
 	r.DELETE("/conversations/:conversationId/messages/:messageId", h.DeleteMessage)
 	r.POST("/conversations/:conversationId/messages/:messageId/forward", h.ForwardMessage)
+	r.GET("/conversations/:conversationId/messages/:messageId/photo", h.GetMessagePhoto)
 
 	// COMMENTS (REACTIONS)
 	r.POST("/conversations/:conversationId/messages/:messageId/comments", h.CommentMessage)
@@ -61,6 +63,7 @@ func NewRouter(h *Handler) *httprouter.Router {
 	r.DELETE("/groups/:groupId/members/me", h.LeaveGroup)
 	r.PUT("/groups/:groupId/name", h.SetGroupName)
 	r.PUT("/groups/:groupId/photo", h.SetGroupPhoto)
+	r.GET("/groups/:groupId/photo", h.GetGroupPhotoHandler)
 
 	return r
 }

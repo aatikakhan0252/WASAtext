@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid"
-	"github.com/sirupsen/logrus"
 )
 
 // CreateMessage creates a new message in a conversation.
-func (db *appdbimpl) CreateMessage(conversationID, senderID, content string, photo []byte, replyTo *string) (*Message, error) {
+func (db *appdbimpl) CreateMessage(conversationID, senderID, content string, photo []byte, replyTo *string, isForwarded bool) (*Message, error) {
 	id, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
@@ -34,18 +33,18 @@ func (db *appdbimpl) CreateMessage(conversationID, senderID, content string, pho
 		replyToVal = *replyTo
 	}
 
+	forwardedInt := 0
+	if isForwarded {
+		forwardedInt = 1
+	}
+
 	_, err = db.db.Exec(`
-		INSERT INTO messages (id, conversation_id, sender_id, content, photo, timestamp, status, reply_to)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, id.String(), conversationID, senderID, contentVal, photoVal, timestamp, StatusSent, replyToVal)
+		INSERT INTO messages (id, conversation_id, sender_id, content, photo, timestamp, status, reply_to, is_forwarded)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, id.String(), conversationID, senderID, contentVal, photoVal, timestamp, StatusSent, replyToVal, forwardedInt)
 
 	if err != nil {
 		return nil, err
-	}
-
-	// Update message status to received synchronously.
-	if updateErr := db.updateMessageStatusForRecipients(id.String()); updateErr != nil {
-		logrus.WithError(updateErr).Warn("failed to update message status for recipients")
 	}
 
 	sender, err := db.GetUserByID(senderID)
@@ -53,26 +52,47 @@ func (db *appdbimpl) CreateMessage(conversationID, senderID, content string, pho
 		return nil, err
 	}
 
-	return &Message{
-		ID:         id.String(),
-		SenderID:   senderID,
-		SenderName: sender.Name,
-		Content:    content,
-		Photo:      photo,
-		Timestamp:  timestamp,
-		Status:     StatusSent,
-		ReplyTo:    replyTo,
-		Comments:   []Comment{},
-	}, nil
+	msg := &Message{
+		ID:          id.String(),
+		SenderID:    senderID,
+		SenderName:  sender.Name,
+		Content:     content,
+		Photo:       photo,
+		Timestamp:   timestamp,
+		Status:      StatusSent,
+		ReplyTo:     replyTo,
+		IsForwarded: isForwarded,
+		Comments:    []Comment{},
+	}
+
+	// Fill reply snippet
+	if replyTo != nil && *replyTo != "" {
+		db.fillReplySnippet(msg)
+	}
+
+	return msg, nil
 }
 
-// updateMessageStatusForRecipients marks message as received.
-func (db *appdbimpl) updateMessageStatusForRecipients(messageID string) error {
-	_, err := db.db.Exec(
-		"UPDATE messages SET status = ? WHERE id = ?",
-		StatusReceived, messageID,
-	)
-	return err
+// fillReplySnippet populates replyToContent and replyToHasPhoto.
+func (db *appdbimpl) fillReplySnippet(msg *Message) {
+	if msg.ReplyTo == nil || *msg.ReplyTo == "" {
+		return
+	}
+	var content sql.NullString
+	var photo sql.NullString
+	err := db.db.QueryRow(
+		"SELECT content, photo FROM messages WHERE id = ?",
+		*msg.ReplyTo,
+	).Scan(&content, &photo)
+	if err != nil {
+		return
+	}
+	if content.Valid {
+		msg.ReplyToContent = content.String
+	}
+	if photo.Valid && len(photo.String) > 0 {
+		msg.ReplyToHasPhoto = true
+	}
 }
 
 // GetMessage retrieves a single message by ID.
@@ -81,9 +101,10 @@ func (db *appdbimpl) GetMessage(messageID string) (*Message, error) {
 	var content sql.NullString
 	var photo sql.NullString
 	var replyTo sql.NullString
+	var isForwarded sql.NullBool
 
 	err := db.db.QueryRow(`
-		SELECT m.id, m.sender_id, u.name, m.content, m.photo, m.timestamp, m.status, m.reply_to
+		SELECT m.id, m.sender_id, u.name, m.content, m.photo, m.timestamp, m.status, m.reply_to, m.is_forwarded
 		FROM messages m
 		JOIN users u ON m.sender_id = u.id
 		WHERE m.id = ?
@@ -96,6 +117,7 @@ func (db *appdbimpl) GetMessage(messageID string) (*Message, error) {
 		&msg.Timestamp,
 		&msg.Status,
 		&replyTo,
+		&isForwarded,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -114,6 +136,11 @@ func (db *appdbimpl) GetMessage(messageID string) (*Message, error) {
 	if replyTo.Valid {
 		msg.ReplyTo = &replyTo.String
 	}
+	if isForwarded.Valid {
+		msg.IsForwarded = isForwarded.Bool
+	}
+
+	db.fillReplySnippet(&msg)
 
 	comments, err := db.getMessageComments(messageID)
 	if err != nil {

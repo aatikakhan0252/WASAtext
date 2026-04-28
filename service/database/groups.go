@@ -105,6 +105,12 @@ func (db *appdbimpl) GetGroup(groupID string) (*Group, error) {
 		group.Photo = []byte(photo.String)
 	}
 
+	// Get associated conversation ID
+	_ = db.db.QueryRow(
+		"SELECT id FROM conversations WHERE group_id = ?",
+		groupID,
+	).Scan(&group.ConversationID)
+
 	rows, err := db.db.Query(`
 		SELECT u.id, u.name, u.photo 
 		FROM users u 
@@ -136,6 +142,44 @@ func (db *appdbimpl) GetGroup(groupID string) (*Group, error) {
 	}
 
 	return &group, rows.Err()
+}
+
+// GetGroupByConversationID retrieves a group by its conversation ID.
+func (db *appdbimpl) GetGroupByConversationID(conversationID string) (*Group, error) {
+	var groupID string
+	err := db.db.QueryRow(
+		"SELECT group_id FROM conversations WHERE id = ? AND is_group = 1",
+		conversationID,
+	).Scan(&groupID)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrGroupNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return db.GetGroup(groupID)
+}
+
+// GetGroupPhoto retrieves just the photo bytes for a group.
+func (db *appdbimpl) GetGroupPhoto(groupID string) ([]byte, error) {
+	var photo sql.NullString
+	err := db.db.QueryRow(
+		"SELECT photo FROM groups WHERE id = ?",
+		groupID,
+	).Scan(&photo)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrGroupNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !photo.Valid || len(photo.String) == 0 {
+		return nil, ErrGroupNotFound
+	}
+	return []byte(photo.String), nil
 }
 
 // AddUserToGroup adds a user to a group.

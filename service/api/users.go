@@ -178,3 +178,20 @@ func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request, _ httprout
 
 	writeJSON(w, http.StatusOK, response, h.logger)
 }
+
+// GetUserPhoto handles GET /users/:userId/photo — serves photo as binary.
+func (h *Handler) GetUserPhoto(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	userID := ps.ByName("userId")
+
+	photo, err := h.db.GetUserPhoto(userID)
+	if err != nil {
+		http.Error(w, "No photo", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-cache")
+	if _, writeErr := w.Write(photo); writeErr != nil {
+		h.logger.WithError(writeErr).Error("failed to write photo response")
+	}
+}

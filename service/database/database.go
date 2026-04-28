@@ -24,6 +24,7 @@ type AppDatabase interface {
 	GetUserByID(id string) (*User, error)
 	UpdateUserName(userID, newName string) error
 	UpdateUserPhoto(userID string, photo []byte) error
+	GetUserPhoto(userID string) ([]byte, error)
 	SearchUsers(query string) ([]User, error)
 
 	// Conversation operations
@@ -32,7 +33,7 @@ type AppDatabase interface {
 	GetOrCreateDirectConversation(userID, otherUserID string) (string, error)
 
 	// Message operations
-	CreateMessage(conversationID, senderID, content string, photo []byte, replyTo *string) (*Message, error)
+	CreateMessage(conversationID, senderID, content string, photo []byte, replyTo *string, isForwarded bool) (*Message, error)
 	GetMessage(messageID string) (*Message, error)
 	DeleteMessage(messageID, userID string) error
 	UpdateMessageStatus(messageID, status string) error
@@ -45,10 +46,12 @@ type AppDatabase interface {
 	// Group operations
 	CreateGroup(name string, creatorID string, memberIDs []string) (*Group, error)
 	GetGroup(groupID string) (*Group, error)
+	GetGroupByConversationID(conversationID string) (*Group, error)
 	AddUserToGroup(groupID, userID, adderID string) error
 	RemoveUserFromGroup(groupID, userID string) error
 	UpdateGroupName(groupID, name string) error
 	UpdateGroupPhoto(groupID string, photo []byte) error
+	GetGroupPhoto(groupID string) ([]byte, error)
 	IsGroupMember(groupID, userID string) (bool, error)
 
 	// Cleanup
@@ -64,23 +67,27 @@ type User struct {
 
 // Group represents a WASAText group.
 type Group struct {
-	ID      string
-	Name    string
-	Photo   []byte
-	Members []User
+	ID             string
+	Name           string
+	Photo          []byte
+	Members        []User
+	ConversationID string
 }
 
 // Message represents a message in a conversation.
 type Message struct {
-	ID         string
-	SenderID   string
-	SenderName string
-	Content    string
-	Photo      []byte
-	Timestamp  time.Time
-	Status     string
-	ReplyTo    *string
-	Comments   []Comment
+	ID              string
+	SenderID        string
+	SenderName      string
+	Content         string
+	Photo           []byte
+	Timestamp       time.Time
+	Status          string
+	ReplyTo         *string
+	ReplyToContent  string
+	ReplyToHasPhoto bool
+	IsForwarded     bool
+	Comments        []Comment
 }
 
 // Comment represents a reaction on a message.
@@ -107,6 +114,7 @@ type Conversation struct {
 	IsGroup  bool
 	Name     string
 	Photo    []byte
+	GroupID  string
 	Members  []User
 	Messages []Message
 }
@@ -207,6 +215,7 @@ func createTables(db *sql.DB) error {
 			timestamp DATETIME NOT NULL,
 			status TEXT NOT NULL DEFAULT 'sent',
 			reply_to TEXT,
+			is_forwarded BOOLEAN NOT NULL DEFAULT 0,
 			FOREIGN KEY (conversation_id) REFERENCES conversations(id),
 			FOREIGN KEY (sender_id) REFERENCES users(id),
 			FOREIGN KEY (reply_to) REFERENCES messages(id)
@@ -229,6 +238,9 @@ func createTables(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+
+	// Migration: add is_forwarded column if missing
+	_, _ = db.Exec("ALTER TABLE messages ADD COLUMN is_forwarded BOOLEAN NOT NULL DEFAULT 0")
 
 	return nil
 }

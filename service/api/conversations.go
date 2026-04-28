@@ -15,6 +15,7 @@ import (
 type ConversationPreviewResponse struct {
 	ConversationID     string `json:"conversationId"`
 	IsGroup            bool   `json:"isGroup"`
+	GroupID            string `json:"groupId,omitempty"`
 	Name               string `json:"name"`
 	HasPhoto           bool   `json:"hasPhoto"`
 	LastMessageTime    string `json:"lastMessageTimestamp,omitempty"`
@@ -26,6 +27,7 @@ type ConversationPreviewResponse struct {
 type ConversationResponse struct {
 	ConversationID string            `json:"conversationId"`
 	IsGroup        bool              `json:"isGroup"`
+	GroupID        string            `json:"groupId,omitempty"`
 	Name           string            `json:"name"`
 	HasPhoto       bool              `json:"hasPhoto"`
 	Members        []UserResponse    `json:"members,omitempty"`
@@ -34,15 +36,18 @@ type ConversationResponse struct {
 
 // MessageResponse represents a message.
 type MessageResponse struct {
-	MessageID  string            `json:"messageId"`
-	SenderID   string            `json:"senderId"`
-	SenderName string            `json:"senderName"`
-	Content    string            `json:"content,omitempty"`
-	HasPhoto   bool              `json:"hasPhoto"`
-	Timestamp  string            `json:"timestamp"`
-	Status     string            `json:"status"`
-	ReplyTo    string            `json:"replyTo,omitempty"`
-	Comments   []CommentResponse `json:"comments"`
+	MessageID       string            `json:"messageId"`
+	SenderID        string            `json:"senderId"`
+	SenderName      string            `json:"senderName"`
+	Content         string            `json:"content,omitempty"`
+	HasPhoto        bool              `json:"hasPhoto"`
+	Timestamp       string            `json:"timestamp"`
+	Status          string            `json:"status"`
+	ReplyTo         string            `json:"replyTo,omitempty"`
+	ReplyToContent  string            `json:"replyToContent,omitempty"`
+	ReplyToHasPhoto bool              `json:"replyToHasPhoto,omitempty"`
+	IsForwarded     bool              `json:"isForwarded,omitempty"`
+	Comments        []CommentResponse `json:"comments"`
 }
 
 // CommentResponse represents a reaction.
@@ -83,6 +88,14 @@ func (h *Handler) GetMyConversations(w http.ResponseWriter, r *http.Request, _ h
 			LastMessageIsPhoto: c.LastMessageIsPhoto,
 		}
 
+		// Get group ID for group conversations
+		if c.IsGroup {
+			group, groupErr := h.db.GetGroupByConversationID(c.ID)
+			if groupErr == nil {
+				preview.GroupID = group.ID
+			}
+		}
+
 		if !c.LastMessageTime.IsZero() {
 			preview.LastMessageTime = c.LastMessageTime.Format("2006-01-02T15:04:05Z07:00")
 		}
@@ -117,6 +130,7 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request, ps htt
 	response := ConversationResponse{
 		ConversationID: conv.ID,
 		IsGroup:        conv.IsGroup,
+		GroupID:         conv.GroupID,
 		Name:           conv.Name,
 		HasPhoto:       len(conv.Photo) > 0,
 	}
@@ -131,13 +145,16 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request, ps htt
 
 	for _, msg := range conv.Messages {
 		msgResp := MessageResponse{
-			MessageID:  msg.ID,
-			SenderID:   msg.SenderID,
-			SenderName: msg.SenderName,
-			Content:    msg.Content,
-			HasPhoto:   len(msg.Photo) > 0,
-			Timestamp:  msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
-			Status:     msg.Status,
+			MessageID:       msg.ID,
+			SenderID:        msg.SenderID,
+			SenderName:      msg.SenderName,
+			Content:         msg.Content,
+			HasPhoto:        len(msg.Photo) > 0,
+			Timestamp:       msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+			Status:          msg.Status,
+			ReplyToContent:  msg.ReplyToContent,
+			ReplyToHasPhoto: msg.ReplyToHasPhoto,
+			IsForwarded:     msg.IsForwarded,
 		}
 
 		if msg.ReplyTo != nil {
@@ -152,7 +169,15 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request, ps htt
 			})
 		}
 
+		if msgResp.Comments == nil {
+			msgResp.Comments = []CommentResponse{}
+		}
+
 		response.Messages = append(response.Messages, msgResp)
+	}
+
+	if response.Messages == nil {
+		response.Messages = []MessageResponse{}
 	}
 
 	writeJSON(w, http.StatusOK, response, h.logger)

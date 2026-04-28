@@ -62,6 +62,9 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request, ps httprou
 			return
 		}
 
+		// Read text content from form field
+		content = r.FormValue("content")
+
 		file, _, fileErr := r.FormFile("photo")
 		if fileErr == nil {
 			var readErr error
@@ -96,7 +99,7 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request, ps httprou
 		return
 	}
 
-	msg, err := h.db.CreateMessage(conversationID, authUserID, content, photo, replyTo)
+	msg, err := h.db.CreateMessage(conversationID, authUserID, content, photo, replyTo, false)
 	if err != nil {
 		h.logger.WithError(err).Error("failed to create message")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -104,13 +107,16 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	response := MessageResponse{
-		MessageID:  msg.ID,
-		SenderID:   msg.SenderID,
-		SenderName: msg.SenderName,
-		Content:    msg.Content,
-		HasPhoto:   len(msg.Photo) > 0,
-		Timestamp:  msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
-		Status:     msg.Status,
+		MessageID:       msg.ID,
+		SenderID:        msg.SenderID,
+		SenderName:      msg.SenderName,
+		Content:         msg.Content,
+		HasPhoto:        len(msg.Photo) > 0,
+		Timestamp:       msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		Status:          msg.Status,
+		ReplyToContent:  msg.ReplyToContent,
+		ReplyToHasPhoto: msg.ReplyToHasPhoto,
+		Comments:        []CommentResponse{},
 	}
 
 	if msg.ReplyTo != nil {
@@ -170,7 +176,8 @@ func (h *Handler) ForwardMessage(w http.ResponseWriter, r *http.Request, ps http
 		return
 	}
 
-	msg, err := h.db.CreateMessage(req.TargetConversationID, authUserID, originalMsg.Content, originalMsg.Photo, nil)
+	// Forward with isForwarded = true
+	msg, err := h.db.CreateMessage(req.TargetConversationID, authUserID, originalMsg.Content, originalMsg.Photo, nil, true)
 	if err != nil {
 		h.logger.WithError(err).Error("failed to forward message")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -178,13 +185,15 @@ func (h *Handler) ForwardMessage(w http.ResponseWriter, r *http.Request, ps http
 	}
 
 	response := MessageResponse{
-		MessageID:  msg.ID,
-		SenderID:   msg.SenderID,
-		SenderName: msg.SenderName,
-		Content:    msg.Content,
-		HasPhoto:   len(msg.Photo) > 0,
-		Timestamp:  msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
-		Status:     msg.Status,
+		MessageID:   msg.ID,
+		SenderID:    msg.SenderID,
+		SenderName:  msg.SenderName,
+		Content:     msg.Content,
+		HasPhoto:    len(msg.Photo) > 0,
+		Timestamp:   msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		Status:      msg.Status,
+		IsForwarded: true,
+		Comments:    []CommentResponse{},
 	}
 
 	writeJSON(w, http.StatusCreated, response, h.logger)
@@ -216,6 +225,39 @@ func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request, ps httpr
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetMessagePhoto serves the photo of a message as binary.
+func (h *Handler) GetMessagePhoto(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	authUserID := getUserIDFromAuth(r)
+	if authUserID == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	messageID := ps.ByName("messageId")
+
+	msg, err := h.db.GetMessage(messageID)
+	if errors.Is(err, database.ErrMessageNotFound) {
+		http.Error(w, "Message not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.logger.WithError(err).Error("failed to get message")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if len(msg.Photo) == 0 {
+		http.Error(w, "No photo", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "max-age=3600")
+	if _, writeErr := w.Write(msg.Photo); writeErr != nil {
+		h.logger.WithError(writeErr).Error("failed to write photo response")
+	}
 }
 
 // CommentMessage handles POST .../comments (operationId: commentMessage).
